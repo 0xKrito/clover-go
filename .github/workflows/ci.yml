@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    name: Build & Test (macOS)
+    runs-on: macos-14
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          check-latest: true
+
+      - name: Precompile Swift Helper
+        run: |
+          mkdir -p build
+          swiftc -O -o build/clover-helper tools/clover-helper/main.swift
+
+      - name: Run Tests with Race Detector
+        run: |
+          CLOVER_HELPER_BIN=$(pwd)/build/clover-helper CGO_ENABLED=0 go test -race -v ./...

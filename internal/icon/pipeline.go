@@ -1,0 +1,261 @@
+package icon
+
+import (
+	"container/list"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+
+	"github.com/egoist/mygo"
+	mygo_ui "github.com/egoist/mygo/ui"
+)
+
+const (
+	defaultLRUCapacity   = 1024
+	maxLIFOQueueCapacity = 64
+	numWorkers           = 6
+)
+
+type iconTask struct {
+	key     string
+	path    string
+	mtime   int64
+	size    int64
+	px      int
+	onReady func()
+}
+
+// Pipeline coordinates dual-layer (Memory LRU + Disk) icon and thumbnail loading.
+type Pipeline struct {
+	mu        sync.Mutex
+	cacheDir  string
+	lru       map[string]*list.Element
+	lruList   *list.List
+	queue     []iconTask
+	inFlight  map[string]bool
+	cond      *sync.Cond
+	isClosing bool
+}
+
+type lruItem struct {
+	key    string
+	bitmap *mygo_ui.Bitmap
+}
+
+// NewPipeline creates and starts the icon caching pipeline.
+func NewPipeline(cacheDir string) *Pipeline {
+	p := &Pipeline{
+		cacheDir: cacheDir,
+		lru:      make(map[string]*list.Element, defaultLRUCapacity),
+		lruList:  list.New(),
+		queue:    make([]iconTask, 0, maxLIFOQueueCapacity),
+		inFlight: make(map[string]bool),
+	}
+	p.cond = sync.NewCond(&p.mu)
+
+	_ = os.MkdirAll(cacheDir, 0755)
+
+	for i := 0; i < numWorkers; i++ {
+		go p.workerLoop()
+	}
+
+	return p
+}
+
+// GetOrQueue checks memory LRU cache, returning *ui.Bitmap if hit, or enqueuing a background task.
+func (p *Pipeline) GetOrQueue(path string, mtime int64, size int64, px int, onReady func()) *mygo_ui.Bitmap {
+	key := computeCacheKey(path, mtime, size, px)
+
+	p.mu.Lock()
+	if elem, found := p.lru[key]; found {
+		p.lruList.MoveToFront(elem)
+		bmp := elem.Value.(lruItem).bitmap
+		p.mu.Unlock()
+		return bmp
+	}
+
+	if !p.inFlight[key] {
+		p.pushLIFO(iconTask{
+			key:     key,
+			path:    path,
+			mtime:   mtime,
+			size:    size,
+			px:      px,
+			onReady: onReady,
+		})
+	}
+	p.mu.Unlock()
+
+	return nil
+}
+
+func (p *Pipeline) pushLIFO(task iconTask) {
+	if len(p.queue) >= maxLIFOQueueCapacity {
+		// Drop oldest item from front of queue to keep viewport-priority.
+		// The dropped task must release its inFlight slot, otherwise its key
+		// stays claimed forever and that icon is never retried.
+		dropped := p.queue[0]
+		p.queue = p.queue[1:]
+		delete(p.inFlight, dropped.key)
+	}
+	p.queue = append(p.queue, task)
+	p.inFlight[task.key] = true
+	p.cond.Signal()
+}
+
+// workerLoop pops a batch per wakeup. All tasks that need native AppKit icon
+// extraction are executed in ONE main-thread round trip per batch: mygo's
+// Shell.FileIcon is main-thread-bound (NSWorkspace iconForFile:), so issuing
+// it per task would serialize the whole worker pool behind cross-thread
+// dispatch overhead — the root cause of slow /Applications icon loading.
+func (p *Pipeline) workerLoop() {
+	for {
+		p.mu.Lock()
+		for len(p.queue) == 0 && !p.isClosing {
+			p.cond.Wait()
+		}
+		if p.isClosing {
+			p.mu.Unlock()
+			return
+		}
+
+		// Drain the whole queue as one batch (LIFO order preserved).
+		batch := make([]iconTask, len(p.queue))
+		copy(batch, p.queue)
+		p.queue = p.queue[:0]
+		p.mu.Unlock()
+
+		p.processBatch(batch)
+	}
+}
+
+// classifyTask reports whether the task can be generated purely in the
+// worker goroutine（图片纯 Go 解码）; 其余（含 PDF/视频）需要主线程
+// AppKit 原生图标。曾经 PDF/视频走 qlmanage -t 缩略图，因高频 GUI 子进程
+// 弹窗问题已移除，统一回退原生图标。
+func classifyTask(task iconTask) bool {
+	ext := strings.ToLower(filepath.Ext(task.path))
+	return isImageExtension(ext)
+}
+
+func (p *Pipeline) processBatch(batch []iconTask) {
+	// 1. Pure-Go tasks run locally in this worker, fully parallel.
+	var nativeTasks []iconTask
+	for _, task := range batch {
+		if classifyTask(task) {
+			p.processLocal(task)
+		} else {
+			nativeTasks = append(nativeTasks, task)
+		}
+	}
+	if len(nativeTasks) == 0 {
+		return
+	}
+
+	// 2. Native icon extraction: disk-cache hits skip the main thread
+	// entirely; only real misses go through one synchronized round trip.
+	var misses []iconTask
+	for _, task := range nativeTasks {
+		if data, err := os.ReadFile(filepath.Join(p.cacheDir, task.key+".png")); err == nil && len(data) > 0 {
+			p.finalizeTask(task, data)
+		} else {
+			misses = append(misses, task)
+		}
+	}
+	if len(misses) == 0 {
+		return
+	}
+
+	// 3. One synchronized main-thread round trip for the whole batch.
+	done := make(chan struct{})
+	icons := make([]([]byte), len(misses))
+	mygo.RunOnMain(func() {
+		for i, task := range misses {
+			icons[i], _ = mygo.Shell.FileIcon(task.path, task.px)
+		}
+		close(done)
+	})
+	<-done
+
+	// 4. Persist, decode, cache and notify on the worker side.
+	for i, task := range misses {
+		p.finalizeTask(task, icons[i])
+	}
+}
+
+// processLocal handles image thumbnails that need no AppKit.
+func (p *Pipeline) processLocal(task iconTask) {
+	if data, err := GenerateIconBytes(task.path, task.px); err == nil && len(data) > 0 {
+		p.finalizeTask(task, data)
+	} else {
+		p.releaseTask(task)
+	}
+}
+
+// finalizeTask stores generated bytes: writes the disk cache, decodes the
+// bitmap into the LRU and fires onReady on the main thread.
+func (p *Pipeline) finalizeTask(task iconTask, data []byte) {
+	var bmp *mygo_ui.Bitmap
+	if len(data) > 0 {
+		_ = os.WriteFile(filepath.Join(p.cacheDir, task.key+".png"), data, 0644)
+		bmp, _ = mygo_ui.DecodeBitmap(data)
+	}
+
+	p.mu.Lock()
+	delete(p.inFlight, task.key)
+	if bmp != nil {
+		p.putLRU(task.key, bmp)
+	}
+	p.mu.Unlock()
+
+	if bmp != nil && task.onReady != nil {
+		mygo.RunOnMain(func() {
+			task.onReady()
+			bmp.ReleasePixels()
+		})
+	}
+}
+
+// releaseTask drops an inFlight claim when a task produced nothing.
+func (p *Pipeline) releaseTask(task iconTask) {
+	p.mu.Lock()
+	delete(p.inFlight, task.key)
+	p.mu.Unlock()
+}
+
+func (p *Pipeline) putLRU(key string, bmp *mygo_ui.Bitmap) {
+	if elem, found := p.lru[key]; found {
+		p.lruList.MoveToFront(elem)
+		elem.Value = lruItem{key: key, bitmap: bmp}
+		return
+	}
+
+	if p.lruList.Len() >= defaultLRUCapacity {
+		oldest := p.lruList.Back()
+		if oldest != nil {
+			p.lruList.Remove(oldest)
+			delete(p.lru, oldest.Value.(lruItem).key)
+		}
+	}
+
+	elem := p.lruList.PushFront(lruItem{key: key, bitmap: bmp})
+	p.lru[key] = elem
+}
+
+func computeCacheKey(path string, mtime int64, size int64, px int) string {
+	raw := fmt.Sprintf("%s:%d:%d:%d", path, mtime, size, px)
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:16])
+}
+
+// Close terminates worker goroutines.
+func (p *Pipeline) Close() {
+	p.mu.Lock()
+	p.isClosing = true
+	p.cond.Broadcast()
+	p.mu.Unlock()
+}

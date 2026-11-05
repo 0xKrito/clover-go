@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloverGo — 架构与产品方案评审门户 (MyGo Metal Native)</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #181b23;
+      --surface-2: #212631;
+      --border: rgba(255, 255, 255, 0.09);
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --accent: #0a84ff;
+      --accent-soft: rgba(10, 132, 255, 0.14);
+      --green: #30d158;
+      --orange: #ff9f0a;
+      --red: #ff453a;
+      --purple: #bf5af2;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding-bottom: 60px;
+    }
+    header {
+      background: linear-gradient(180deg, rgba(10,132,255,0.12) 0%, rgba(15,17,23,0) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 36px 24px 28px;
+    }
+    .container { max-width: 1220px; margin: 0 auto; padding: 0 20px; }
+    .badge-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .badge {
+      font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    }
+    .badge.primary { background: var(--accent-soft); border-color: rgba(10,132,255,0.4); color: #60a5fa; }
+    .badge.ok { background: rgba(48,209,88,0.14); border-color: rgba(48,209,88,0.4); color: #4ade80; }
+    h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
+    .subtitle { color: var(--muted); font-size: 15px; max-width: 880px; }
+    .kpi-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px; margin-top: 24px;
+    }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+    }
+    .kpi .val { font-size: 24px; font-weight: 700; color: #60a5fa; }
+    .kpi .lbl { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    nav.tabs {
+      position: sticky; top: 0; z-index: 20;
+      background: rgba(15, 17, 23, 0.88); backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border); margin-bottom: 28px;
+    }
+    nav.tabs .nav-inner {
+      display: flex; gap: 8px; overflow-x: auto; padding: 12px 20px; max-width: 1220px; margin: 0 auto;
+    }
+    .tab-btn {
+      background: transparent; color: var(--muted); border: 1px solid transparent;
+      padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .tab-btn:hover { color: var(--text); background: var(--surface); }
+    .tab-btn.active { color: #fff; background: var(--accent); }
+    section { margin-bottom: 36px; }
+    h2 {
+      font-size: 20px; font-weight: 700; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    h2 span.num {
+      background: var(--accent-soft); color: #60a5fa; border: 1px solid rgba(10,132,255,0.35);
+      font-size: 12px; padding: 2px 8px; border-radius: 6px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 22px; margin-bottom: 18px;
+    }
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; background: rgba(255,255,255,0.02); }
+    code {
+      font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px;
+      background: rgba(255,255,255,0.07); padding: 2px 6px; border-radius: 5px; color: #93c5fd;
+    }
+    pre {
+      font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px;
+      background: #0b0d12; border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px; overflow-x: auto; color: #e5e7eb; line-height: 1.5;
+    }
+    /* High-Fidelity Mac Window Mockup */
+    .mac-win {
+      background: #1c1e24; border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 12px; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+      font-size: 12.5px;
+    }
+    .mac-titlebar {
+      height: 40px; background: #16181d; display: flex; align-items: center;
+      padding: 0 14px; gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .traffic { display: flex; gap: 7px; margin-right: 6px; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+    .clover-tabs { display: flex; align-items: flex-end; height: 100%; gap: 4px; flex: 1; padding-top: 6px; }
+    .c-tab {
+      padding: 6px 12px; border-radius: 7px 7px 0 0; background: rgba(255,255,255,0.04);
+      color: var(--muted); display: flex; align-items: center; gap: 6px; font-size: 12px;
+    }
+    .c-tab.active {
+      background: #222630; color: #fff; font-weight: 600;
+      border-top: 1px solid rgba(255,255,255,0.12);
+    }
+    .mac-toolbar {
+      background: #222630; padding: 8px 14px; display: flex; align-items: center;
+      gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .crumb-bar {
+      background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.08);
+      padding: 4px 10px; border-radius: 6px; flex: 1; color: #d1d5db;
+    }
+    .mac-body { display: grid; grid-template-columns: 185px 1fr 245px; min-height: 320px; }
+    .mac-sidebar {
+      background: rgba(22, 24, 30, 0.78); border-right: 1px solid rgba(255,255,255,0.07);
+      padding: 12px 10px;
+    }
+    .side-group { font-size: 11px; color: var(--muted); font-weight: 600; margin: 10px 6px 4px; }
+    .side-item { padding: 5px 8px; border-radius: 6px; color: #d1d5db; display: flex; align-items: center; gap: 8px; }
+    .side-item.active { background: rgba(10,132,255,0.22); color: #60a5fa; font-weight: 600; }
+    .mac-main { background: #1a1d24; }
+    .file-row {
+      display: grid; grid-template-columns: 1fr 110px 80px 70px;
+      padding: 7px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); align-items: center;
+    }
+    .file-row.head { color: var(--muted); font-size: 11.5px; font-weight: 600; background: rgba(255,255,255,0.02); }
+    .file-row.sel { background: rgba(10,132,255,0.24); }
+    .mac-preview {
+      background: #171a20; border-left: 1px solid rgba(255,255,255,0.07); padding: 14px;
+    }
+    .tag-dots { display: flex; gap: 6px; margin-top: 8px; }
+    .tag-dot { width: 13px; height: 13px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.25); }
+    .mac-statusbar {
+      height: 26px; background: #16181d; border-top: 1px solid rgba(255,255,255,0.07);
+      padding: 0 14px; display: flex; align-items: center; justify-content: space-between;
+      color: var(--muted); font-size: 11.5px;
+    }
+    .step-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+    .step-box {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px;
+    }
+    .step-box h4 { color: #60a5fa; font-size: 13.5px; margin-bottom: 6px; }
+    .step-box p { font-size: 12.5px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="badge-row">
+        <span class="badge primary">CloverGo 架构与产品方案评审</span>
+        <span class="badge ok">github.com/egoist/mygo v0.7.1 (Metal GPU)</span>
+        <span class="badge">CGO_ENABLED=0 纯 Go 全栈</span>
+        <span class="badge">彻底移除 Rust + SwiftUI 双栈维护成本</span>
+      </div>
+      <h1>CloverGo — 原生 Mac 质感 × Windows Clover 多标签效率</h1>
+      <p class="subtitle">
+        一句话定位：<b>「看起来是克制优雅的原生 Mac 应用，用起来是行云流水的 Windows Clover」</b>。
+        完全复用 <code>roxy/mygo-app</code> 已验证的 Metal GPU 立即模式渲染底座、Apple HIG 双模视觉体系与主线程安全纪律。
+      </p>
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="val">100% 纯 Go</div>
+          <div class="lbl">零 Rust / 零 C FFI / 零 WebView，单一语言栈极速编译 (&lt;2s)</div>
+        </div>
+        <div class="kpi">
+          <div class="val">~15 MB</div>
+          <div class="lbl">macOS ARM64 单二进制体积，开机瞬时秒开</div>
+        </div>
+        <div class="kpi">
+          <div class="val">~35 MB</div>
+          <div class="lbl">多标签常驻物理内存，空闲 CPU 0.0%</div>
+        </div>
+        <div class="kpi">
+          <div class="val">120 Hz</div>
+          <div class="lbl">Metal GPU 硬件加速 + 10万文件视口虚拟化</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <div class="nav-inner">
+      <a class="tab-btn active" href="#sec-ui">1. 产品原型与 Mac Native 界面</a>
+      <a class="tab-btn" href="#sec-cap">2. 能力矩阵与可行性对齐</a>
+      <a class="tab-btn" href="#sec-arch">3. 系统分层与数据流拓扑</a>
+      <a class="tab-btn" href="#sec-modules">4. 代码目录与模块拆解</a>
+      <a class="tab-btn" href="#sec-roadmap">5. 五阶段实施路线图</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <!-- Section 1: UI Prototype -->
+    <section id="sec-ui">
+      <h2><span class="num">01</span> 全栈产品高保真原型 (MyGo Metal GPU + Apple HIG 毛玻璃)</h2>
+      <div class="card">
+        <p style="color:var(--muted); font-size:13.5px; margin-bottom:14px;">
+          采用 <code>mygo.TitleBarHidden</code> 沉浸式顶栏 + <code>VibrancySidebar</code> 原生毛玻璃侧边栏 + 活动页签与工具栏同色衔接设计，彻底告别传统套壳应用的割裂感：
+        </p>
+        <div class="mac-win">
+          <div class="mac-titlebar">
+            <div class="traffic"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+            <div class="clover-tabs">
+              <div class="c-tab">📌 ~</div>
+              <div class="c-tab active">📁 clover_go &nbsp;×</div>
+              <div class="c-tab">📁 mygo-app — roxy &nbsp;×</div>
+              <div class="c-tab">📁 Downloads &nbsp;×</div>
+              <div class="c-tab" style="padding:6px 9px;">+</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.06); padding:4px 10px; border-radius:6px; color:var(--muted); width:190px;">
+              🔍 搜索当前目录 (⌘F)
+            </div>
+          </div>
+          <div class="mac-toolbar">
+            <span style="color:var(--muted);">◀ &nbsp; ▶ &nbsp; ↑</span>
+            <div class="crumb-bar">🏠 ~ &nbsp;▸&nbsp; PycharmProjects &nbsp;▸&nbsp; own &nbsp;▸&nbsp; <b style="color:#fff;">clover_go</b></div>
+            <span style="color:var(--muted); font-size:12px;">📌 书签: [⚡ roxy] [📦 clover] [📄 设计规范]</span>
+          </div>
+          <div class="mac-body">
+            <div class="mac-sidebar">
+              <div class="side-group">个人收藏</div>
+              <div class="side-item">🏠 个人 (developer)</div>
+              <div class="side-item">🖥 桌面</div>
+              <div class="side-item active">📁 clover_go</div>
+              <div class="side-item">📥 下载</div>
+              <div class="side-item">🚀 应用程序</div>
+              <div class="side-group">命名工作区</div>
+              <div class="side-item">🗂 Go 核心研发</div>
+              <div class="side-item">🗂 日常归档整理</div>
+              <div class="side-group">磁盘卷 (/Volumes)</div>
+              <div class="side-item">💾 Macintosh HD</div>
+            </div>
+            <div class="mac-main">
+              <div class="file-row head">
+                <div>名称 ▲</div><div>修改日期</div><div>大小</div><div>类型</div>
+              </div>
+              <div class="file-row sel">
+                <div>📁 <b>docs</b> &nbsp;<span style="color:#30d158;">●</span></div><div>今天 20:34</div><div>--</div><div>文件夹</div>
+              </div>
+              <div class="file-row">
+                <div>📁 internal &nbsp;<span style="color:#0a84ff;">●</span></div><div>今天 20:32</div><div>--</div><div>文件夹</div>
+              </div>
+              <div class="file-row">
+                <div>📁 cmd</div><div>今天 20:30</div><div>--</div><div>文件夹</div>
+              </div>
+              <div class="file-row">
+                <div>📄 go.mod</div><div>今天 20:28</div><div>787 B</div><div>Go 模块</div>
+              </div>
+              <div class="file-row">
+                <div>📄 Makefile</div><div>昨天 18:12</div><div>2.3 KB</div><div>Makefile</div>
+              </div>
+              <div class="file-row">
+                <div>📄 README.md &nbsp;<span style="color:#ff9f0a;">●</span></div><div>昨天 15:40</div><div>5.8 KB</div><div>Markdown</div>
+              </div>
+              <div class="file-row">
+                <div>📦 CloverGo-arm64.dmg</div><div>10月25日</div><div>7.2 MB</div><div>磁盘映像</div>
+              </div>
+            </div>
+            <div class="mac-preview">
+              <div style="text-align:center; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
+                <div style="font-size:38px;">📁</div>
+                <div style="font-weight:700; margin-top:4px;">docs</div>
+                <div style="font-size:11.5px; color:var(--muted);">文件夹 · 6 项 · 84 KB</div>
+              </div>
+              <div style="margin-top:12px; font-size:12px; color:#d1d5db;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span style="color:var(--muted);">创建日期</span><span>今天 20:30</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span style="color:var(--muted);">修改日期</span><span>今天 20:34</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:var(--muted);">权限</span><span>rwxr-xr-x</span></div>
+                <div style="color:var(--muted); margin-bottom:4px;">Finder 互通颜色标签</div>
+                <div class="tag-dots">
+                  <span class="tag-dot" style="background:#ff453a;"></span>
+                  <span class="tag-dot" style="background:#ff9f0a;"></span>
+                  <span class="tag-dot" style="background:#ffd60a;"></span>
+                  <span class="tag-dot" style="background:#30d158; outline:2px solid #fff;"></span>
+                  <span class="tag-dot" style="background:#0a84ff;"></span>
+                  <span class="tag-dot" style="background:#bf5af2;"></span>
+                </div>
+                <div style="margin-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                  <div style="background:rgba(255,255,255,0.07); padding:5px 8px; border-radius:6px; text-align:center;">&gt;_ 终端打开</div>
+                  <div style="background:rgba(255,255,255,0.07); padding:5px 8px; border-radius:6px; text-align:center;">✎ 编辑器</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mac-statusbar">
+            <div>🟢 7 个项目 (已选中 1 个文件夹) · 可用空间 428.5 GB</div>
+            <div>[☰ 列表 | ⊞ 网格] &nbsp; [👁 预览栏 ⇧⌘P] &nbsp; [⚙ 9色主题切换]</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2: Capability & Feasibility Alignment -->
+    <section id="sec-cap">
+      <h2><span class="num">02</span> 六大产品能力域与 MyGo 技术映射（现货 vs 纯 Go vs 扩展）</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:18%;">能力模块</th>
+              <th style="width:34%;">核心功能特性 (1:1 对齐并增强原 Clover)</th>
+              <th style="width:28%;">MyGo / 纯 Go 落地方式</th>
+              <th style="width:20%;">成熟度评估</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>1. Clover 多标签与多窗口</b></td>
+              <td>⌘T/⌘W、Pin 固定标签、⇧⌘T 关闭恢复栈、中键/⌥+点击开新标签、同名目录父级副标题、<b>拖出成独立窗口 / 拖回合并</b>、命名工作区</td>
+              <td><code>mygo.NewWindow</code> + <code>ui.Element.DragData/DropData</code>（利用 <code>result.Escaped</code> 屏幕坐标拆窗）</td>
+              <td><span class="badge ok">纯 Go 原生闭环</span></td>
+            </tr>
+            <tr>
+              <td><b>2. Finder 双模浏览引擎</b></td>
+              <td>四列排序列表（修改日期混排，其余文件夹优先）、图标网格缩放、10万级条目视口虚拟化、拖拽多选、路径面包屑与折叠</td>
+              <td><code>ui.Table</code> (含 <code>DragSelect</code>) + <code>ui.GridView</code> + <code>internal/domain/sorter.go</code></td>
+              <td><span class="badge ok">MyGo 现货原语</span></td>
+            </tr>
+            <tr>
+              <td><b>3. 原生图标与缩略图管线</b></td>
+              <td>.app 与系统文档真实 Finder 图标、图片缩略图、LIFO 视口优先队列 (6 Worker) + 内存 LRU + 磁盘缓存</td>
+              <td><code>mygo.Shell.FileIcon</code> + Go <code>image</code> 解码 + <code>qlmanage -t</code> 异步兜底</td>
+              <td><span class="badge ok">MyGo 现货 + 纯 Go</span></td>
+            </tr>
+            <tr>
+              <td><b>4. 可信文件操作与搜索</b></td>
+              <td>复制/剪切/粘贴、同名冲突四态弹窗（覆盖/跳过/保留两者/应用剩余）、⇧⌘R 四模式批量重命名、移入废纸篓、ditto Zip、内存索引模糊搜索</td>
+              <td><code>os.ReadDir</code> + <code>mygo.Shell.TrashItem</code> + <code>/usr/bin/ditto</code> + 纯 Go 搜索引擎</td>
+              <td><span class="badge ok">100% 替代原 Rust 核</span></td>
+            </tr>
+            <tr>
+              <td><b>5. 双轨预览系统</b></td>
+              <td>右侧常驻预览栏 ⇧⌘P（图片/代码高亮/Markdown/属性/颜色标签）+ 空格键系统 Quick Look 弹窗</td>
+              <td><code>ui/editor</code> + <code>ui/markdown</code> + <code>internal/macos/quicklook.go</code></td>
+              <td><span class="badge primary">MyGo 组件 + 轻量桥接</span></td>
+            </tr>
+            <tr>
+              <td><b>6. macOS 系统深水区联动</b></td>
+              <td>Finder 7色标签双向互通、右键在终端/编辑器打开、<code>fclover://</code> 深链定位、<code>FSEvents</code> 目录实时自动刷新</td>
+              <td><code>unix.Getxattr/Setxattr</code> + <code>mygo.Watch</code> + <code>mygo.App.OnOpenURL</code></td>
+              <td><span class="badge ok">MyGo 现货 + 系统调用</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Section 3: Architecture Topology SVG -->
+    <section id="sec-arch">
+      <h2><span class="num">03</span> 全栈纯 Go 系统分层与无阻塞数据流拓扑</h2>
+      <div class="card">
+        <svg viewBox="0 0 1060 430" width="100%" style="background:#0b0d12; border-radius:10px; border:1px solid var(--border);">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#60a5fa" />
+            </marker>
+          </defs>
+          <!-- Layer 1: Presentation -->
+          <rect x="30" y="20" width="1000" height="105" rx="10" fill="#161b26" stroke="#2563eb" stroke-width="1.5"/>
+          <text x="50" y="46" fill="#60a5fa" font-size="14" font-weight="bold">Presentation Layer — internal/ui (MyGo Metal GPU 立即模式渲染层 · 120Hz · 严禁任何磁盘/系统 I/O)</text>
+          <rect x="50" y="60" width="170" height="48" rx="6" fill="#1e293b"/><text x="135" y="89" fill="#f8fafc" font-size="12.5" text-anchor="middle">Window &amp; TabBarView</text>
+          <rect x="240" y="60" width="180" height="48" rx="6" fill="#1e293b"/><text x="330" y="89" fill="#f8fafc" font-size="12.5" text-anchor="middle">Toolbar &amp; Breadcrumb</text>
+          <rect x="440" y="60" width="190" height="48" rx="6" fill="#1e293b"/><text x="535" y="89" fill="#f8fafc" font-size="12.5" text-anchor="middle">FileList &amp; IconGridView</text>
+          <rect x="650" y="60" width="175" height="48" rx="6" fill="#1e293b"/><text x="737" y="89" fill="#f8fafc" font-size="12.5" text-anchor="middle">PreviewPane (Code/MD)</text>
+          <rect x="845" y="60" width="165" height="48" rx="6" fill="#1e293b"/><text x="927" y="89" fill="#f8fafc" font-size="12.5" text-anchor="middle">Modals &amp; HIG Theme</text>
+
+          <!-- Arrow 1 -> 2 -->
+          <line x1="360" y1="125" x2="360" y2="165" stroke="#60a5fa" stroke-width="2" marker-end="url(#arrow)"/>
+          <text x="372" y="150" fill="#9ca3af" font-size="12">1. 派发异步 Action</text>
+          <line x1="680" y1="165" x2="680" y2="125" stroke="#30d158" stroke-width="2" marker-end="url(#arrow)"/>
+          <text x="692" y="150" fill="#4ade80" font-size="12">4. mygo.RunOnMain + Invalidate()</text>
+
+          <!-- Layer 2: Application & Domain -->
+          <rect x="30" y="168" width="1000" height="105" rx="10" fill="#161b26" stroke="#38bdf8" stroke-width="1.2"/>
+          <text x="50" y="194" fill="#38bdf8" font-size="14" font-weight="bold">Application &amp; Pure Domain Layer — internal/app &amp; internal/domain (唯一权威状态真理源)</text>
+          <rect x="50" y="208" width="290" height="48" rx="6" fill="#1e293b"/><text x="195" y="237" fill="#f8fafc" font-size="12.5" text-anchor="middle">WindowRegistry (多窗管理 / 标签拆合)</text>
+          <rect x="365" y="208" width="330" height="48" rx="6" fill="#1e293b"/><text x="530" y="237" fill="#f8fafc" font-size="12.5" text-anchor="middle">BrowserCoordinator (TabManager / loadGen 防抖)</text>
+          <rect x="720" y="208" width="290" height="48" rx="6" fill="#1e293b"/><text x="865" y="237" fill="#f8fafc" font-size="12.5" text-anchor="middle">Domain Rules (Sorter / BatchRename)</text>
+
+          <!-- Arrow 2 -> 3 -->
+          <line x1="530" y1="273" x2="530" y2="308" stroke="#60a5fa" stroke-width="2" marker-end="url(#arrow)"/>
+          <text x="542" y="295" fill="#9ca3af" font-size="12">2. 后台 Worker Pool 并发 I/O (带 Context Cancel &amp; loadGen)</text>
+
+          <!-- Layer 3: Infrastructure -->
+          <rect x="30" y="310" width="1000" height="100" rx="10" fill="#161b26" stroke="#a855f7" stroke-width="1.2"/>
+          <text x="50" y="336" fill="#c084fc" font-size="14" font-weight="bold">Infrastructure Layer — internal/{fs, search, icon, macos, config} (CGO_ENABLED=0 纯 Go 驱动)</text>
+          <rect x="50" y="348" width="225" height="46" rx="6" fill="#1e293b"/><text x="162" y="376" fill="#f8fafc" font-size="12" text-anchor="middle">fs: ReadDir分页 / Copy / ditto</text>
+          <rect x="295" y="348" width="225" height="46" rx="6" fill="#1e293b"/><text x="407" y="376" fill="#f8fafc" font-size="12" text-anchor="middle">icon: LIFO队列 + LRU/磁盘缓存</text>
+          <rect x="540" y="348" width="225" height="46" rx="6" fill="#1e293b"/><text x="652" y="376" fill="#f8fafc" font-size="12" text-anchor="middle">search: WalkDir索引 + Token打分</text>
+          <rect x="785" y="348" width="225" height="46" rx="6" fill="#1e293b"/><text x="897" y="376" fill="#f8fafc" font-size="12" text-anchor="middle">macos: FSEvents / xattr / Trash</text>
+        </svg>
+      </div>
+    </section>
+
+    <!-- Section 4: Directory & Modules -->
+    <section id="sec-modules">
+      <h2><span class="num">04</span> 工程目录结构与文档导航（单文件 ≤ 400 行红线）</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="font-size:15px; margin-bottom:10px; color:#60a5fa;">📂 clover_go 代码目录蓝图</h3>
+          <pre>clover_go/
+├── go.mod / mygo.json / Makefile
+├── cmd/clover/main.go          # 单实例锁 + 深链 + 启动入口
+├── internal/
+│   ├── config/                 # ~/.clover-go 沙箱与原子写配置
+│   ├── domain/                 # 纯函数: 排序/批量改名/面包屑计算
+│   ├── fs/                     # 纯 Go 目录分页/Copy冲突/ditto归档
+│   ├── search/                 # 内存 TTL 索引与多词评分搜索
+│   ├── icon/                   # LIFO 视口优先图标与缩略图双缓存
+│   ├── macos/                  # xattr 颜色标签/终端唤起/QuickLook
+│   ├── app/                    # WindowRegistry / TabManager / 协调器
+│   └── ui/                     # 12 个高内聚 MyGo GPU 视图文件 (≤350行)
+└── scripts/package-arm64.sh    # 一键生成 CloverGo.app 与 .dmg</pre>
+        </div>
+        <div class="card">
+          <h3 style="font-size:15px; margin-bottom:10px; color:#4ade80;">📚 已落盘高内聚 Markdown 文档索引</h3>
+          <table>
+            <tbody>
+              <tr>
+                <td><code>docs/index.md</code></td>
+                <td><a href="index.md" style="color:#60a5fa;">文档总索引 (MECE 入口)</a></td>
+              </tr>
+              <tr>
+                <td><code>docs/requirements/01-*.md</code></td>
+                <td><a href="requirements/01-product-requirements-and-state-matrix.md" style="color:#60a5fa;">产品需求规格、四维漏洞体检与状态矩阵</a></td>
+              </tr>
+              <tr>
+                <td><code>docs/requirements/02-*.md</code></td>
+                <td><a href="requirements/02-ui-ux-and-mygo-native-wireframes.md" style="color:#60a5fa;">MyGo 原生高保真线框图与四阶极限交互态</a></td>
+              </tr>
+              <tr>
+                <td><code>docs/architecture/01-*.md</code></td>
+                <td><a href="architecture/01-system-architecture-and-topology.md" style="color:#60a5fa;">全栈纯 Go 系统拓扑、生命周期与方案推演</a></td>
+              </tr>
+              <tr>
+                <td><code>docs/architecture/02-*.md</code></td>
+                <td><a href="architecture/02-module-contracts-and-roadmap.md" style="color:#60a5fa;">模块 Go 接口契约、目录树与五阶段路线图</a></td>
+              </tr>
+              <tr>
+                <td><code>docs/standards/01-*.md</code></td>
+                <td><a href="standards/01-engineering-and-mygo-redlines.md" style="color:#60a5fa;">MyGo 120Hz 渲染零 I/O 红线与工程规范</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: 5-Stage Roadmap -->
+    <section id="sec-roadmap">
+      <h2><span class="num">05</span> 五阶段可执行研发里程碑 (Roadmap)</h2>
+      <div class="step-list">
+        <div class="step-box">
+          <h4>Stage 1 · 纯 Go 引擎底座</h4>
+          <p>初始化 <code>go.mod</code>，完成 <code>domain</code>（Finder 排序、批量重命名、面包屑）与 <code>fs/search</code>（分页读目录、冲突策略、ditto 压缩、模糊搜索）及全套单测。</p>
+        </div>
+        <div class="step-box">
+          <h4>Stage 2 · HIG 视觉与多标签</h4>
+          <p>落地毛玻璃顶栏、9 色主题、全矢量 SVG 图标库，完成 <code>TabManager</code>（新建/Pin固定/⇧⌘T恢复栈/同名副标题）与侧边栏、路径工具栏。</p>
+        </div>
+        <div class="step-box">
+          <h4>Stage 3 · 双模视图与图标管线</h4>
+          <p>落地 <code>IconPipeline</code>（LIFO 视口优先 + 双层缓存）、<code>FileListView</code>（四列排序/拖选/右键菜单）与 <code>IconGridView</code>（虚拟化网格）。</p>
+        </div>
+        <div class="step-box">
+          <h4>Stage 4 · 预览栏与系统联动</h4>
+          <p>落地右侧常驻预览栏（图片/代码高亮/Markdown/7色标签）、空格 Quick Look、终端/编辑器打开、FSEvents 自动刷新与跨窗口标签拖出/合并。</p>
+        </div>
+        <div class="step-box">
+          <h4>Stage 5 · 压测与 DMG 交付</h4>
+          <p>通过 <code>go test -race ./...</code> 与 10 万文件目录压测，执行 <code>package-arm64.sh</code> 产出 ~15MB 独立签名 <code>CloverGo.app</code> 与 <code>.dmg</code>。</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

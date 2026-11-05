@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '发布版本号 (例如 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build & Package macOS (arm64 & x86_64)
+    runs-on: macos-14
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          check-latest: true
+
+      - name: Determine Version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "TAG_NAME=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            TAG=${GITHUB_REF#refs/tags/}
+            VER=${TAG#v}
+            echo "VERSION=${VER}" >> $GITHUB_OUTPUT
+            echo "TAG_NAME=${TAG}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build & Package Apple Silicon (arm64)
+        run: |
+          chmod +x scripts/package.sh
+          VERSION=${{ steps.get_version.outputs.VERSION }} ARCH=arm64 ./scripts/package.sh dmg
+
+      - name: Build & Package Intel (x86_64)
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }} ARCH=x86_64 ./scripts/package.sh dmg
+
+      - name: Prepare Release Artifacts & Checksums
+        id: artifacts
+        run: |
+          mkdir -p dist
+          cp build/*.dmg dist/
+          cp build/*.dmg.sha256 dist/
+          cd dist
+          shasum -a 256 *.dmg > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.TAG_NAME }}
+          name: CloverGo v${{ steps.get_version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+            dist/SHA256SUMS.txt
+          body: |
+            ## CloverGo v${{ steps.get_version.outputs.VERSION }}
+
+            面向 macOS 的高颜值、毫秒级响应、原生 Metal GPU 加速的轻量文件管理器。
+
+            ### 🚀 核心亮点
+            - **极速原生体验**：Go 1.27 + MyGo Metal GPU 驱动，冷启动约 0.2s，内存常驻仅 ~35MB。
+            - **对称等宽双栏**：单双栏一键切换，随处可拖拽跨栏搬家、拖入子目录或侧边栏。
+            - **超级常驻预览**：支持 Markdown 原生富文本/源码秒切、代码语法高亮、音视频与 PDF 原生阅读。
+            - **免解压只读穿透 (Archive VFS)**：双击 `.zip` / `.tar.gz` 即可像普通目录一样即时穿透浏览。
+            - **macOS 生态原生联动**：完美兼容 Finder 7 色标签（`bplist00` 格式）、空格键 Quick Look、终端与主流编辑器秒级跳转。
+
+            ---
+
+            ### 📦 下载与架构说明
+            | 架构 | 适用机型 | 下载文件 |
+            | :--- | :--- | :--- |
+            | **Apple Silicon** | M1 / M2 / M3 / M4 芯片 Mac | `CloverGo-${{ steps.get_version.outputs.VERSION }}-arm64.dmg` |
+            | **Intel** | Intel 处理器 Mac | `CloverGo-${{ steps.get_version.outputs.VERSION }}-x86_64.dmg` |
+
+            > [!TIP]
+            > **首次启动提示“无法打开”或来自未知开发者的解决方法：**
+            > 打开系统终端（Terminal），执行以下命令移除隔离标记即可正常启动：
+            > ```bash
+            > xattr -cr /Applications/CloverGo.app
+            > ```
+
+            > [!NOTE]
+            > **跨平台说明**：当前 v1.x 版本深度针对 Apple Silicon / macOS 原生系统级特性打造。Windows 平台支持计划在完成底层平台抽象解耦层（Platform Abstraction Layer）后推出。

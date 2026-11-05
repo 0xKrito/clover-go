@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build & Binaries
+build/
+/clover
+*.dmg
+*.app/
+*.exe
+*.test
+
+# Go workspace & coverage
+*.out
+*.prof
+
+# Logs & Sandboxes
+logs/
+*.log
+
+# Editor & IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Agentic & Tooling environments
+.agy_home/
+.codegraph/
+
+# Local temp scratch dir
+.tmp/
+
+# External cloned reference material (not managed)
+docs/other_res/dirdeck-community/
