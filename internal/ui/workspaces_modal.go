@@ -85,7 +85,7 @@ func renderSavedWorkspacesSection(c *ui.Context, coord *app.Coordinator) {
 			return
 		}
 
-		ui.Column(c).MaxHeight(180).Radius(4).Border(1, pal.Line).Padding(4).Gap(4).Children(func() {
+		ui.Scroll(c).MaxHeight(180).Radius(4).Border(1, pal.Line).Padding(4).Gap(4).Children(func() {
 			for _, ws := range d.Workspaces {
 				renderWorkspaceRow(c, coord, ws)
 			}
@@ -107,16 +107,16 @@ func renderWorkspaceRow(c *ui.Context, coord *app.Coordinator, ws config.NamedWo
 		if isActive {
 			check = "✓ "
 		}
-		ui.Text(c, check).FontSize(12).TextColor(t.Accent)
-		ui.Text(c, ws.Name).FontSize(11).FontWeight(500).TextColor(t.Text).Grow(1).SingleLine()
+		ui.Text(c, check).FontSize(12).TextColor(t.Accent).Shrink(0)
+		ui.Text(c, ws.Name).FontSize(11).FontWeight(500).TextColor(t.Text).Grow(1).Shrink(1).MinWidth(0).SingleLine().Tooltip(ws.Name)
 
 		tabCountInfo := fmt.Sprintf("%d 个标签", len(ws.Tabs))
 		if len(ws.Tabs) == 0 && len(ws.Paths) > 0 {
 			tabCountInfo = fmt.Sprintf("%d 个路径", len(ws.Paths))
 		}
-		ui.Text(c, tabCountInfo).FontSize(10).TextColor(t.TextMuted)
+		ui.Text(c, tabCountInfo).FontSize(10).TextColor(t.TextMuted).Shrink(0)
 
-		btnRestore := ui.ButtonBase(c).Padding(2, 6).Radius(3).Background(t.Accent.Alpha(0.12))
+		btnRestore := ui.ButtonBase(c).Padding(2, 6).Radius(3).Background(t.Accent.Alpha(0.12)).Shrink(0)
 		btnRestore.Children(func() {
 			ui.Text(c, "载入").FontSize(10).TextColor(t.Accent)
 		})
@@ -125,7 +125,7 @@ func renderWorkspaceRow(c *ui.Context, coord *app.Coordinator, ws config.NamedWo
 			coord.ShowWorkspacesModal = false
 		}
 
-		btnDel := ui.ButtonBase(c).Padding(2, 6).Radius(3).Background(pal.Line)
+		btnDel := ui.ButtonBase(c).Padding(2, 6).Radius(3).Background(pal.Line).Shrink(0)
 		btnDel.Children(func() {
 			ui.Text(c, "删除").FontSize(10).TextColor(t.TextMuted)
 		})

@@ -18,25 +18,9 @@ func PreviewPaneView(c *ui.Context, coord *app.Coordinator, activeTab *app.TabSt
 	pal := Pal(t)
 	// The inspector mirrors the ACTIVE pane's selection (dual-pane aware).
 	pane := activeTab.ActivePane()
+	pWidth := clampedPreviewWidth(coord.PreviewWidth)
 
-	pWidth := coord.PreviewWidth
-	if pWidth < 180 || pWidth > 500 {
-		pWidth = 250
-	}
-
-	resizer := ui.Box(c).Absolute().Left(-4).Top(0).Width(8).FillHeight().Cursor(ui.CursorResizeEW)
-	if dx, _, ok := resizer.Dragged(); ok && dx != 0 {
-		newW := coord.PreviewWidth - dx
-		if newW < 180 {
-			newW = 180
-		} else if newW > 500 {
-			newW = 500
-		}
-		coord.PreviewWidth = newW
-		p := coord.Prefs.Get()
-		p.PreviewWidth = newW
-		_ = coord.Prefs.Save(p)
-	}
+	renderPreviewResizer(c, coord)
 
 	ui.Column(c).Width(pWidth).FillHeight().Background(pal.Sidebar).Padding(12, 10).Gap(10).Children(func() {
 		preview := coord.CurrentPreview
@@ -63,9 +47,29 @@ func PreviewPaneView(c *ui.Context, coord *app.Coordinator, activeTab *app.TabSt
 
 		if !preview.IsBinary && preview.Snippet != "" {
 			ui.Box(c).Height(1).Background(pal.Line)
-			renderSnippetPreview(c, coord, preview)
+			renderSnippetPreview(c, coord, pane, preview)
 		}
 	})
+}
+
+func clampedPreviewWidth(w float32) float32 {
+	if w < 180 || w > 500 {
+		return 250
+	}
+	return w
+}
+
+func renderPreviewResizer(c *ui.Context, coord *app.Coordinator) {
+	resizer := ui.Box(c).Absolute().Left(-4).Top(0).Width(8).FillHeight().Cursor(ui.CursorResizeEW).ZIndex(10)
+	if dx, _, ok := resizer.Dragged(); ok && dx != 0 {
+		coord.UpdatePreviewWidthInMemory(dx)
+	}
+	if _, _, ok := resizer.DragEnded(); ok {
+		coord.EndPreviewDrag()
+	}
+	if resizer.PressCanceled() {
+		coord.CancelPreviewDrag()
+	}
 }
 
 func renderFolderOverview(c *ui.Context, coord *app.Coordinator, pane *app.PaneState) {
@@ -87,7 +91,7 @@ func renderFolderOverview(c *ui.Context, coord *app.Coordinator, pane *app.PaneS
 			ui.Icon(c, IcFolder).Size(56, 56).TextColor(t.Accent)
 		}
 		ui.Text(c, title).FontSize(14).FontWeight(600).TextColor(t.Text)
-		ui.Text(c, domain.CollapseHome(pane.Path, "")).FontSize(11).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, domain.CollapseHome(pane.Path, "")).FontSize(11).TextColor(t.TextMuted).FillWidth().SingleLine().TextAlign(ui.Center).Tooltip(pane.Path)
 		ui.Text(c, fmtItemCount(len(pane.DisplayEntries))).FontSize(11).TextColor(t.TextMuted)
 	})
 }
@@ -97,6 +101,17 @@ func fmtItemCount(n int) string {
 }
 
 func renderHeaderPreview(c *ui.Context, coord *app.Coordinator, prev *app.PreviewSnapshot, pWidth float32) {
+	t := c.Theme()
+	renderHeaderCanvas(c, coord, prev, pWidth)
+
+	ui.Row(c).Justify(ui.Center).Children(func() {
+		ui.Text(c, "点击或按空格快速查看").FontSize(10).TextColor(t.TextMuted.Alpha(0.6))
+	})
+
+	renderHeaderTitle(c, prev)
+}
+
+func renderHeaderCanvas(c *ui.Context, coord *app.Coordinator, prev *app.PreviewSnapshot, pWidth float32) {
 	t := c.Theme()
 	pal := Pal(t)
 
@@ -131,17 +146,15 @@ func renderHeaderPreview(c *ui.Context, coord *app.Coordinator, prev *app.Previe
 		}
 	})
 
-	// Clicking canvas invokes native in-process QLPreviewPanel
 	if btnCanvas.Clicked() {
 		macos.ToggleQuickLook(prev.Path)
 	}
+}
 
-	ui.Row(c).Justify(ui.Center).Children(func() {
-		ui.Text(c, "点击或按空格快速查看").FontSize(10).TextColor(t.TextMuted.Alpha(0.6))
-	})
-
+func renderHeaderTitle(c *ui.Context, prev *app.PreviewSnapshot) {
+	t := c.Theme()
 	ui.Column(c).AlignItems(ui.Center).Gap(2).Children(func() {
-		ui.Text(c, prev.Name).FontSize(13).FontWeight(600).TextColor(t.Text).Lines(1, 2).TextAlign(ui.Center)
+		ui.Text(c, prev.Name).FontSize(13).FontWeight(600).TextColor(t.Text).Lines(1, 2).TextAlign(ui.Center).FillWidth().Tooltip(prev.Path)
 
 		subText := prev.Kind
 		if prev.IsGIF {
@@ -176,18 +189,19 @@ func renderMetadataSection(c *ui.Context, prev *app.PreviewSnapshot) {
 func metaRow(c *ui.Context, label, val string) {
 	t := c.Theme()
 	ui.Row(c).Justify(ui.SpaceBetween).Gap(8).Children(func() {
-		ui.Text(c, label).FontSize(11).TextColor(t.TextMuted).Width(60)
-		ui.Text(c, val).FontSize(11).TextColor(t.Text).SingleLine().Grow(1).TextAlign(ui.End)
+		ui.Text(c, label).FontSize(11).TextColor(t.TextMuted).Width(60).Shrink(0)
+		ui.Text(c, val).FontSize(11).TextColor(t.Text).SingleLine().Grow(1).Shrink(1).MinWidth(0).TextAlign(ui.End).Tooltip(val)
 	})
 }
 
-func renderColorTagsPicker(c *ui.Context, coord *app.Coordinator, pane *app.PaneState, prev *app.PreviewSnapshot) {
-	t := c.Theme()
-	tags := []struct {
-		Idx   int
-		Name  string
-		Color ui.Color
-	}{
+type colorTagDef struct {
+	Idx   int
+	Name  string
+	Color ui.Color
+}
+
+func getColorTagDefs(t *ui.Theme) []colorTagDef {
+	return []colorTagDef{
 		{macos.TagRed, "红色", TintRed.C(t)},
 		{macos.TagOrange, "橙色", TintOrange.C(t)},
 		{macos.TagYellow, "黄色", ui.Hex("#FFCC00")},
@@ -196,6 +210,11 @@ func renderColorTagsPicker(c *ui.Context, coord *app.Coordinator, pane *app.Pane
 		{macos.TagPurple, "紫色", TintPurple.C(t)},
 		{macos.TagGray, "灰色", TintGray.C(t)},
 	}
+}
+
+func renderColorTagsPicker(c *ui.Context, coord *app.Coordinator, pane *app.PaneState, prev *app.PreviewSnapshot) {
+	t := c.Theme()
+	tags := getColorTagDefs(t)
 
 	ui.Column(c).Gap(6).Children(func() {
 		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
@@ -213,32 +232,37 @@ func renderColorTagsPicker(c *ui.Context, coord *app.Coordinator, pane *app.Pane
 				}
 			}
 		})
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-			for _, tg := range tags {
-				tagIdx := tg.Idx
-				tagName := tg.Name
-				isSelected := prev.ColorTag == tagIdx
-				btn := ui.ButtonBase(c).Padding(2).Radius(10).AlignItems(ui.Center)
-				if isSelected {
-					btn.Border(1.5, t.Accent)
-				}
-				btn.Children(func() {
-					ColorDot(c, tg.Color, 12)
-				})
-				if btn.Clicked() {
-					if isSelected {
-						_ = macos.RemoveFileTags(prev.Path)
-						prev.ColorTag = macos.TagNone
-						applyTagToPaneItem(pane, prev.Path, nil)
-					} else {
-						_ = macos.SetFileTag(prev.Path, tagIdx)
-						prev.ColorTag = tagIdx
-						applyTagToPaneItem(pane, prev.Path, []string{tagName})
-					}
-					coord.Invalidate()
-				}
+		renderColorTagButtons(c, coord, pane, prev, tags)
+	})
+}
+
+func renderColorTagButtons(c *ui.Context, coord *app.Coordinator, pane *app.PaneState, prev *app.PreviewSnapshot, tags []colorTagDef) {
+	t := c.Theme()
+	ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+		for _, tg := range tags {
+			tagIdx := tg.Idx
+			tagName := tg.Name
+			isSelected := prev.ColorTag == tagIdx
+			btn := ui.ButtonBase(c).Padding(2).Radius(10).AlignItems(ui.Center)
+			if isSelected {
+				btn.Border(1.5, t.Accent)
 			}
-		})
+			btn.Children(func() {
+				ColorDot(c, tg.Color, 12)
+			})
+			if btn.Clicked() {
+				if isSelected {
+					_ = macos.RemoveFileTags(prev.Path)
+					prev.ColorTag = macos.TagNone
+					applyTagToPaneItem(pane, prev.Path, nil)
+				} else {
+					_ = macos.SetFileTag(prev.Path, tagIdx)
+					prev.ColorTag = tagIdx
+					applyTagToPaneItem(pane, prev.Path, []string{tagName})
+				}
+				coord.Invalidate()
+			}
+		}
 	})
 }
 
@@ -263,7 +287,7 @@ func renderQuickActions(c *ui.Context, coord *app.Coordinator, prev *app.Preview
 	_ = coord
 }
 
-func renderSnippetPreview(c *ui.Context, coord *app.Coordinator, prev *app.PreviewSnapshot) {
+func renderSnippetPreview(c *ui.Context, coord *app.Coordinator, pane *app.PaneState, prev *app.PreviewSnapshot) {
 	t := c.Theme()
 	snippet := prev.Snippet
 	truncated := len(snippet) >= 32768
@@ -284,7 +308,7 @@ func renderSnippetPreview(c *ui.Context, coord *app.Coordinator, prev *app.Previ
 
 		if prev.IsMarkdown {
 			ui.Scroll(c).MaxHeight(200).Padding(8).Radius(6).Background(Pal(t).Inset).Children(func() {
-				markdown.View(c, snippet, nil)
+				markdown.View(c, snippet, buildMarkdownOptions(c, coord, pane, prev))
 			})
 		} else if coord.CurrentEditorState != nil && coord.CurrentEditorPath == prev.Path {
 			ui.Box(c).Height(180).Radius(6).Background(Pal(t).Inset).Padding(4).Children(func() {
@@ -296,97 +320,8 @@ func renderSnippetPreview(c *ui.Context, coord *app.Coordinator, prev *app.Previ
 				lines = lines[:4096]
 			}
 			ui.Scroll(c).MaxHeight(160).Padding(6).Radius(6).Background(Pal(t).Inset).Children(func() {
-				ui.Text(c, lines).FontSize(10).TextColor(t.Text).Lines(1, 100)
+				ui.Text(c, lines).FontSize(10).TextColor(t.Text).Lines(1, 100).PreserveSpaces()
 			})
 		}
-	})
-}
-
-func renderMarkdownPane(c *ui.Context, coord *app.Coordinator, pane *app.PaneState, prev *app.PreviewSnapshot, pWidth float32) {
-	t := c.Theme()
-	pal := Pal(t)
-
-	// 1. Compact Header: Icon + Title + Size + Quick Look hint
-	ui.Column(c).Gap(6).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
-			ui.Icon(c, IcFile).Size(16, 16).TextColor(t.Accent)
-			ui.Text(c, prev.Name).FontSize(13).FontWeight(600).TextColor(t.Text).SingleLine().Grow(1)
-		})
-		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, fmt.Sprintf("Markdown 文档 · %s", domain.FormatSize(prev.Size))).FontSize(11).TextColor(t.TextMuted)
-			btnQL := ui.ButtonBase(c).Padding(2, 6).Radius(4).Background(pal.Inset)
-			btnQL.Children(func() {
-				ui.Row(c).Gap(3).AlignItems(ui.Center).Children(func() {
-					ui.Icon(c, IcEye).Size(11, 11).TextColor(t.TextMuted)
-					ui.Text(c, "空格快速查看").FontSize(10).TextColor(t.TextMuted)
-				})
-			})
-			if btnQL.Clicked() {
-				macos.ToggleQuickLook(prev.Path)
-			}
-		})
-
-		// Dual-mode Switcher: [ 👁 渲染预览 ]   [ ⌨️ 源码查看 ]
-		ui.Row(c).Gap(6).Padding(4, 0).Children(func() {
-			btnPreview := pillSegmentButton(c, IcEye, "渲染预览", coord.MarkdownViewMode == 0)
-			if btnPreview.Clicked() {
-				coord.MarkdownViewMode = 0
-				coord.Invalidate()
-			}
-			btnSource := pillSegmentButton(c, IcEdit, "源码查看", coord.MarkdownViewMode == 1)
-			if btnSource.Clicked() {
-				coord.MarkdownViewMode = 1
-				coord.Invalidate()
-			}
-		})
-	})
-
-	ui.Box(c).Height(1).Background(pal.Line)
-
-	// 2. Full-height Markdown Viewer Body
-	if coord.MarkdownViewMode == 0 {
-		// Rendered Preview mode: rich markdown
-		ui.Scroll(c).Grow(1).FillWidth().Padding(8).Radius(6).Background(pal.Inset).Children(func() {
-			markdown.View(c, prev.Snippet, nil)
-		})
-	} else {
-		// Source View mode: Zed-engine syntax highlighted code editor with line numbers
-		if coord.CurrentEditorState != nil && coord.CurrentEditorPath == prev.Path {
-			ui.Box(c).Grow(1).FillWidth().Padding(4).Radius(6).Background(pal.Inset).Children(func() {
-				editor.View(c, coord.CurrentEditorState).Fill()
-			})
-		} else {
-			lines := prev.Snippet
-			ui.Scroll(c).Grow(1).FillWidth().Padding(6).Radius(6).Background(pal.Inset).Children(func() {
-				ui.Text(c, lines).FontSize(10).TextColor(t.Text).Lines(1, 100)
-			})
-		}
-	}
-
-	ui.Box(c).Height(1).Background(pal.Line)
-
-	// 3. Color tags & Quick Actions at bottom
-	renderColorTagsPicker(c, coord, pane, prev)
-	renderQuickActions(c, coord, prev)
-}
-
-func pillSegmentButton(c *ui.Context, icon *ui.SVG, label string, active bool) ui.Element {
-	t := c.Theme()
-	b := ui.ButtonBase(c).Label(label).Padding(3, 8).Gap(4).Radius(5).AlignItems(ui.Center)
-	bg := t.Text.Alpha(0.06)
-	col := t.TextMuted
-	if active {
-		bg = t.Accent
-		col = ui.Hex("#ffffff")
-	} else if b.Hovered() {
-		bg = t.Text.Alpha(0.12)
-		col = t.Text
-	}
-	b.Background(bg)
-	return b.Children(func() {
-		if icon != nil {
-			ui.Icon(c, icon).Size(12, 12).TextColor(col)
-		}
-		ui.Text(c, label).FontSize(11).TextColor(col).FontWeight(500)
 	})
 }

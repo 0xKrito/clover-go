@@ -62,8 +62,10 @@ func (s *AppState) View(c *ui.Context) {
 		})
 
 		// 2. Toolbar & Navigation (Connected Page Color)
+		// onReload 用于刷新按钮、⌘R、导航与面包屑：都是用户主动动作，
+		// 必须真正重读目录（ReloadCurrentTab），而不是走 watcher 的静默重载。
 		ToolbarView(c, s.Coord, func() {
-			s.Coord.LoadCurrentTab(nil)
+			s.Coord.ReloadCurrentTab()
 		})
 
 		// 3. Main Workspace Split: Sidebar + Content Area + Preview Pane
@@ -151,16 +153,16 @@ func renderSinglePane(c *ui.Context, coord *app.Coordinator, tab *app.TabState, 
 				if pane.Path == "/" {
 					title = "Macintosh HD"
 				}
-				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Gap(6).AlignItems(ui.Center).Grow(1).Shrink(1).MinWidth(0).Children(func() {
 					txtCol := t.TextMuted
 					if isActive {
 						txtCol = t.Accent
 					}
-					ui.Icon(c, IcFolder).Size(12, 12).TextColor(txtCol)
-					ui.Text(c, title).FontSize(11).FontWeight(600).TextColor(txtCol)
+					ui.Icon(c, IcFolder).Size(12, 12).TextColor(txtCol).Shrink(0)
+					ui.Text(c, title).FontSize(11).FontWeight(600).TextColor(txtCol).SingleLine().Shrink(1).MinWidth(0).Tooltip(pane.Path)
 				})
 
-				btnClosePane := ui.ButtonBase(c).Padding(2).Radius(3).AlignItems(ui.Center)
+				btnClosePane := ui.ButtonBase(c).Padding(2).Radius(3).AlignItems(ui.Center).Shrink(0)
 				btnClosePane.Children(func() {
 					ui.Icon(c, IcClose).Size(10, 10).TextColor(t.TextMuted)
 				})
@@ -245,9 +247,9 @@ func renderStatusBar(c *ui.Context, coord *app.Coordinator, tab *app.TabState) {
 
 	ui.Row(c).Height(24).Background(pal.Sidebar).Padding(0, 12).AlignItems(ui.Center).Children(func() {
 		if coord.ToastMessage != "" {
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				ui.Icon(c, IcInfo).Size(12, 12).TextColor(t.Accent)
-				ui.Text(c, coord.ToastMessage).FontSize(11).FontWeight(600).TextColor(t.Accent)
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Shrink(0).Children(func() {
+				ui.Icon(c, IcInfo).Size(12, 12).TextColor(t.Accent).Shrink(0)
+				ui.Text(c, coord.ToastMessage).FontSize(11).FontWeight(600).TextColor(t.Accent).SingleLine().Shrink(1).MinWidth(0)
 			})
 			ui.Box(c).Width(12).Height(1)
 		}
@@ -283,7 +285,7 @@ func renderStatusBar(c *ui.Context, coord *app.Coordinator, tab *app.TabState) {
 			statusText += fmt.Sprintf(" · 可用空间 %s", domain.FormatSize(int64(pane.VolumeFreeBytes)))
 		}
 
-		ui.Text(c, statusText).FontSize(11).TextColor(t.TextMuted).Grow(1)
+		ui.Text(c, statusText).FontSize(11).TextColor(t.TextMuted).Grow(1).SingleLine().Shrink(1).MinWidth(0).Tooltip(statusText)
 
 		renderStatusControls(c, coord)
 	})
@@ -292,7 +294,7 @@ func renderStatusBar(c *ui.Context, coord *app.Coordinator, tab *app.TabState) {
 func renderStatusControls(c *ui.Context, coord *app.Coordinator) {
 	t := c.Theme()
 	if coord.ViewMode == config.ViewGrid {
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Shrink(0).Children(func() {
 			ui.Text(c, fmt.Sprintf("%dpx", coord.GridIconSize)).FontSize(10).TextColor(t.TextMuted)
 
 			btnMinus := IconButton(c, IcMinus, "缩小图标", coord.GridIconSize <= 64)

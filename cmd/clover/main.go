@@ -17,7 +17,7 @@ import (
 	mygo_ui "github.com/egoist/mygo/ui"
 )
 
-const version = "1.0.0"
+const version = "1.1.0"
 
 func main() {
 	if handleCLIFlags() {

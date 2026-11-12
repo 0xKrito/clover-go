@@ -124,95 +124,6 @@ func columnMinTotalWidth(coord *app.Coordinator) float32 {
 	return w + float32(visible)*8
 }
 
-func renderTableHeaders(c *ui.Context, coord *app.Coordinator, pane *app.PaneState) {
-	nameW := float32(0)
-	if coord.NameColManual {
-		nameW = coord.ColWidthName
-	}
-	renderHeaderColumn(c, "名称", domain.SortByName, pane, coord, nameW)
-	renderColDivider(c, func(dx float32) { coord.UpdateColWidth("name", dx) }, func() { coord.ResetColWidth("name") })
-
-	if !coord.HideColCreateTime {
-		renderHeaderColumn(c, "创建时间", domain.SortByCreateTime, pane, coord, coord.ColWidthCreateTime)
-		renderColDivider(c, func(dx float32) { coord.UpdateColWidth("create_time", dx) }, func() { coord.ResetColWidth("create_time") })
-	}
-	if !coord.HideColModTime {
-		renderHeaderColumn(c, "修改时间", domain.SortByModTime, pane, coord, coord.ColWidthModTime)
-		renderColDivider(c, func(dx float32) { coord.UpdateColWidth("mod_time", dx) }, func() { coord.ResetColWidth("mod_time") })
-	}
-	if !coord.HideColSize {
-		renderHeaderColumn(c, "大小", domain.SortBySize, pane, coord, coord.ColWidthSize)
-		renderColDivider(c, func(dx float32) { coord.UpdateColWidth("size", dx) }, func() { coord.ResetColWidth("size") })
-	}
-	if !coord.HideColKind {
-		renderHeaderColumn(c, "类型", domain.SortByKind, pane, coord, coord.ColWidthKind)
-		renderColDivider(c, func(dx float32) { coord.UpdateColWidth("kind", dx) }, func() { coord.ResetColWidth("kind") })
-	}
-}
-
-func renderColDivider(c *ui.Context, onDrag func(dx float32), onReset func()) {
-	t := c.Theme()
-	div := ui.Box(c).Width(8).FillHeight().Cursor(ui.CursorResizeEW).AlignItems(ui.Center).Justify(ui.Center)
-	lineColor := Pal(t).Line
-	if div.Hovered() {
-		lineColor = t.Accent
-	}
-	div.Children(func() {
-		ui.Box(c).Width(1).Height(14).Background(lineColor)
-	})
-	if dx, _, ok := div.Dragged(); ok && dx != 0 {
-		onDrag(dx)
-	}
-	if div.DoubleClicked() && onReset != nil {
-		onReset()
-	}
-}
-
-func renderHeaderColumn(c *ui.Context, label string, field domain.SortField, pane *app.PaneState, coord *app.Coordinator, fixedW float32) {
-	t := c.Theme()
-	isActive := pane.Sort.Field == field
-	arrow := ""
-	if isActive {
-		if pane.Sort.Direction == domain.SortAsc {
-			arrow = " ▲"
-		} else {
-			arrow = " ▼"
-		}
-	}
-
-	btn := ui.ButtonBase(c).Padding(2, 0).Radius(4).Justify(ui.Start).AlignItems(ui.Center)
-	if fixedW > 0 {
-		btn.Width(fixedW)
-	} else {
-		// The name column absorbs the room the metadata columns leave, as
-		// Finder's does, until the user drags it to a width of their own.
-		btn.Grow(1).Shrink(1).MinWidth(120)
-	}
-
-	btn.Children(func() {
-		col := t.TextMuted
-		if isActive {
-			col = t.Text
-		}
-		ui.Text(c, label+arrow).FontSize(11).FontWeight(600).TextColor(col).SingleLine()
-	})
-
-	if btn.Clicked() {
-		if pane.Sort.Field == field {
-			if pane.Sort.Direction == domain.SortAsc {
-				pane.Sort.Direction = domain.SortDesc
-			} else {
-				pane.Sort.Direction = domain.SortAsc
-			}
-		} else {
-			pane.Sort.Field = field
-			pane.Sort.Direction = domain.SortAsc
-		}
-		domain.SortFiles(pane.Entries, pane.Sort)
-		coord.ApplyPaneFilter(pane)
-		coord.Invalidate()
-	}
-}
 
 // renderTableRow renders row i and reports whether the row took a click.
 func renderTableRow(c *ui.Context, coord *app.Coordinator, pane *app.PaneState, i int, now time.Time) bool {
@@ -328,7 +239,7 @@ func renderNameCell(c *ui.Context, coord *app.Coordinator, pane *app.PaneState, 
 		}
 		if bmp != nil {
 			// 图标完全穿透鼠标，点击图标等同点击整行。
-			ui.Image(c, bmp).Size(16, 16).IgnoreInput(true)
+			ui.Image(c, bmp).Size(16, 16).IgnoreInput(true).Shrink(0)
 		} else {
 			ic := IcFile
 			if item.IsDir && !item.IsAppBundle {
@@ -336,7 +247,7 @@ func renderNameCell(c *ui.Context, coord *app.Coordinator, pane *app.PaneState, 
 			} else if item.IsAppBundle {
 				ic = IcApp
 			}
-			ui.Icon(c, ic).Size(15, 15).TextColor(iconCol).IgnoreInput(true)
+			ui.Icon(c, ic).Size(15, 15).TextColor(iconCol).IgnoreInput(true).Shrink(0)
 		}
 
 		// Optional Finder color tag dot
@@ -347,7 +258,7 @@ func renderNameCell(c *ui.Context, coord *app.Coordinator, pane *app.PaneState, 
 		if isRenaming {
 			renderInlineRenameInput(c, coord, pane, item, 12)
 		} else {
-			ui.Text(c, item.Name).FontSize(12).TextColor(textCol).Grow(1).Shrink(1).MinWidth(0).SingleLine()
+			ui.Text(c, item.Name).FontSize(12).TextColor(textCol).Grow(1).Shrink(1).MinWidth(0).SingleLine().Tooltip(item.Name)
 		}
 	})
 

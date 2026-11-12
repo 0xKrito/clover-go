@@ -28,49 +28,53 @@ func ConflictModal(c *ui.Context, coord *app.Coordinator) {
 		dialog.Shadow(0, 8, 24, 0, ui.Hex("#000000").Alpha(0.25))
 
 		dialog.Children(func() {
-			// Title Header
-			ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Icon(c, IcFolder).Size(16, 16).TextColor(t.Accent)
-					ui.Text(c, "文件已存在").FontSize(14).FontWeight(600).TextColor(t.Text)
-				})
-
-				btnClose := ui.ButtonBase(c).Padding(2).Radius(3).AlignItems(ui.Center)
-				btnClose.Children(func() {
-					ui.Icon(c, IcClose).Size(12, 12).TextColor(t.TextMuted)
-				})
-				if btnClose.Clicked() {
-					coord.ResolveConflict(app.ChoiceCancel, false)
-				}
-			})
-
+			renderConflictHeader(c, coord)
 			ui.Box(c).Height(1).Background(pal.Line)
 
 			desc := fmt.Sprintf("目标目录中已存在同名项目 “%s”。您想要替换它还是保留两者？", filename)
 			ui.Text(c, desc).FontSize(12).TextColor(t.Text).Wrap()
 
-			// Comparison Box
 			renderConflictComparison(c, conflict)
-
-			// "Apply to all remaining conflicts" checkbox
-			if len(conflict.Remaining) > 0 {
-				btnCheck := ui.ButtonBase(c).Padding(4, 6).Radius(4).AlignItems(ui.Center).Gap(6)
-				chkText := "□ 应用到后续所有冲突项"
-				if coord.ConflictApplyToAll {
-					chkText = "☑ 应用到后续所有冲突项"
-				}
-				btnCheck.Children(func() {
-					ui.Text(c, chkText).FontSize(11).TextColor(t.TextMuted)
-				})
-				if btnCheck.Clicked() {
-					coord.ConflictApplyToAll = !coord.ConflictApplyToAll
-				}
-			}
-
-			// Actions Footer
+			renderConflictCheckbox(c, coord, conflict)
 			renderConflictActions(c, coord)
 		})
 	})
+}
+
+func renderConflictHeader(c *ui.Context, coord *app.Coordinator) {
+	t := c.Theme()
+	ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, IcFolder).Size(16, 16).TextColor(t.Accent).Shrink(0)
+			ui.Text(c, "文件已存在").FontSize(14).FontWeight(600).TextColor(t.Text)
+		})
+
+		btnClose := ui.ButtonBase(c).Padding(2).Radius(3).AlignItems(ui.Center).Shrink(0)
+		btnClose.Children(func() {
+			ui.Icon(c, IcClose).Size(12, 12).TextColor(t.TextMuted)
+		})
+		if btnClose.Clicked() {
+			coord.ResolveConflict(app.ChoiceCancel, false)
+		}
+	})
+}
+
+func renderConflictCheckbox(c *ui.Context, coord *app.Coordinator, conflict *app.PendingConflict) {
+	if len(conflict.Remaining) == 0 {
+		return
+	}
+	t := c.Theme()
+	btnCheck := ui.ButtonBase(c).Padding(4, 6).Radius(4).AlignItems(ui.Center).Justify(ui.Start).Gap(6)
+	chkText := "□ 应用到后续所有冲突项"
+	if coord.ConflictApplyToAll {
+		chkText = "☑ 应用到后续所有冲突项"
+	}
+	btnCheck.Children(func() {
+		ui.Text(c, chkText).FontSize(11).TextColor(t.TextMuted)
+	})
+	if btnCheck.Clicked() {
+		coord.ConflictApplyToAll = !coord.ConflictApplyToAll
+	}
 }
 
 func renderConflictComparison(c *ui.Context, conflict *app.PendingConflict) {
@@ -85,10 +89,12 @@ func renderConflictComparison(c *ui.Context, conflict *app.PendingConflict) {
 	ui.Column(c).Radius(6).Background(pal.Inset).Padding(10).Gap(8).Children(func() {
 		// Existing file
 		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Gap(2).Children(func() {
+			ui.Column(c).Gap(2).Grow(1).Shrink(1).MinWidth(0).Children(func() {
 				ui.Text(c, "现存版本:").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+				dstBase := filepath.Base(conflict.DstPath)
+				ui.Text(c, dstBase).FontSize(11).FontWeight(500).TextColor(t.Text).SingleLine().Shrink(1).MinWidth(0).Tooltip(conflict.DstPath)
 				info := fmt.Sprintf("%s · 修改时间: %s", domain.FormatSize(conflict.DstSize), domain.FormatModTime(conflict.DstModTime, now))
-				ui.Text(c, info).FontSize(11).TextColor(t.Text)
+				ui.Text(c, info).FontSize(11).TextColor(t.TextMuted).SingleLine().Shrink(1).MinWidth(0)
 			})
 		})
 
@@ -96,10 +102,12 @@ func renderConflictComparison(c *ui.Context, conflict *app.PendingConflict) {
 
 		// Incoming file
 		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Gap(2).Children(func() {
+			ui.Column(c).Gap(2).Grow(1).Shrink(1).MinWidth(0).Children(func() {
 				ui.Text(c, "即将移入版本 ("+actionName+"):").FontSize(11).FontWeight(600).TextColor(t.Accent)
+				srcBase := filepath.Base(conflict.SrcPath)
+				ui.Text(c, srcBase).FontSize(11).FontWeight(500).TextColor(t.Text).SingleLine().Shrink(1).MinWidth(0).Tooltip(conflict.SrcPath)
 				info := fmt.Sprintf("%s · 修改时间: %s", domain.FormatSize(conflict.SrcSize), domain.FormatModTime(conflict.SrcModTime, now))
-				ui.Text(c, info).FontSize(11).TextColor(t.Text)
+				ui.Text(c, info).FontSize(11).TextColor(t.TextMuted).SingleLine().Shrink(1).MinWidth(0)
 			})
 		})
 	})
@@ -108,7 +116,7 @@ func renderConflictComparison(c *ui.Context, conflict *app.PendingConflict) {
 func renderConflictActions(c *ui.Context, coord *app.Coordinator) {
 	t := c.Theme()
 	ui.Row(c).Justify(ui.End).Gap(8).AlignItems(ui.Center).Children(func() {
-		btnCancel := ui.ButtonBase(c).Padding(5, 12).Radius(6).AlignItems(ui.Center)
+		btnCancel := ui.ButtonBase(c).Padding(5, 12).Radius(6).AlignItems(ui.Center).Shrink(0)
 		if btnCancel.Hovered() {
 			btnCancel.Background(t.Text.Alpha(0.08))
 		}
@@ -119,7 +127,7 @@ func renderConflictActions(c *ui.Context, coord *app.Coordinator) {
 			coord.ResolveConflict(app.ChoiceCancel, false)
 		}
 
-		btnSkip := ui.ButtonBase(c).Padding(5, 12).Radius(6).AlignItems(ui.Center)
+		btnSkip := ui.ButtonBase(c).Padding(5, 12).Radius(6).AlignItems(ui.Center).Shrink(0)
 		if btnSkip.Hovered() {
 			btnSkip.Background(t.Text.Alpha(0.08))
 		}
@@ -130,7 +138,7 @@ func renderConflictActions(c *ui.Context, coord *app.Coordinator) {
 			coord.ResolveConflict(app.ChoiceSkip, coord.ConflictApplyToAll)
 		}
 
-		btnKeepBoth := ui.ButtonBase(c).Padding(5, 12).Radius(6).AlignItems(ui.Center)
+		btnKeepBoth := ui.ButtonBase(c).Padding(5, 12).Radius(6).AlignItems(ui.Center).Shrink(0)
 		if btnKeepBoth.Hovered() {
 			btnKeepBoth.Background(t.Text.Alpha(0.08))
 		}
@@ -141,7 +149,7 @@ func renderConflictActions(c *ui.Context, coord *app.Coordinator) {
 			coord.ResolveConflict(app.ChoiceKeepBoth, coord.ConflictApplyToAll)
 		}
 
-		btnReplace := ui.ButtonBase(c).Padding(5, 14).Radius(6).Background(t.Accent).AlignItems(ui.Center)
+		btnReplace := ui.ButtonBase(c).Padding(5, 14).Radius(6).Background(t.Accent).AlignItems(ui.Center).Shrink(0)
 		btnReplace.Children(func() {
 			ui.Text(c, "替换").FontSize(12).FontWeight(600).TextColor(ui.Hex("#FFFFFF"))
 		})

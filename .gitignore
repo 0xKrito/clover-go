@@ -26,7 +26,7 @@ logs/
 *~
 
 # Agentic & Tooling environments
-.agy_home/
+.agy_home*/
 .codegraph/
 
 # Local temp scratch dir

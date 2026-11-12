@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -333,5 +334,59 @@ func TestCoordinator_ColWidthsUpdateAndReset(t *testing.T) {
 	coord.ResetColWidth("name")
 	if coord.ColWidthName != 220 {
 		t.Errorf("expected ColWidthName=220 after reset, got %v", coord.ColWidthName)
+	}
+}
+
+// TestCoordinator_ReloadCurrentTab 验证手动刷新（刷新按钮 / ⌘R）即使在搜索
+// 模式下也会强制重读目录并退出搜索模式，而不是被静默忽略。
+func TestCoordinator_ReloadCurrentTab(t *testing.T) {
+	tempDir := t.TempDir()
+	prefs, err := config.NewPrefsManager(filepath.Join(tempDir, "prefs.json"))
+	if err != nil {
+		t.Fatalf("NewPrefsManager: %v", err)
+	}
+	spaces, err := config.NewWorkspaceManager(filepath.Join(tempDir, "spaces.json"))
+	if err != nil {
+		t.Fatalf("NewWorkspaceManager: %v", err)
+	}
+	// 加载在后台 goroutine 完成，runOnMain 回填结果：用锁将两端串行化。
+	var mu sync.Mutex
+	coord := NewCoordinator(tempDir, prefs, spaces, nil, func(f func()) {
+		mu.Lock()
+		defer mu.Unlock()
+		f()
+	})
+	defer coord.Close()
+
+	if err := os.WriteFile(filepath.Join(tempDir, "real.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tab := coord.Tabs.ActiveTab()
+	pane := tab.Left()
+	// 模拟搜索模式下的 pane：列表内容不是真实目录。
+	tab.IsSearchMode = true
+	pane.IsSearchMode = true
+	pane.Entries = nil
+	pane.DisplayEntries = nil
+
+	coord.ReloadCurrentTab()
+
+	count, searchMode := 0, true
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		count = len(pane.DisplayEntries)
+		searchMode = tab.IsSearchMode || pane.IsSearchMode
+		mu.Unlock()
+		if count > 0 && !searchMode {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if count == 0 {
+		t.Fatalf("expected directory entries after ReloadCurrentTab, got 0 (err %q)", pane.LoadErr)
+	}
+	if searchMode {
+		t.Error("expected search mode to be left after ReloadCurrentTab")
 	}
 }

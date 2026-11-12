@@ -1,16 +1,21 @@
 {
   "name": "CloverGo",
   "identifier": "com.clover.app",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "copyright": "Copyright (c) 2026 CloverGo",
   "out": "build",
   "urlSchemes": [
     "fclover"
   ],
+  "resourcesExclude": [
+    "**/.DS_Store",
+    "screenshots/**",
+    "**/*.iconset/**"
+  ],
   "macos": {
     "minimumSystemVersion": "12.0",
     "infoPlist": {
-      "CFBundleVersion": "100",
+      "CFBundleVersion": "110",
       "CFBundleURLTypes": [
         {
           "CFBundleURLName": "CloverGo URL",

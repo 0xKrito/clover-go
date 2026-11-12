@@ -49,7 +49,7 @@ func PillButton(c *ui.Context, icon *ui.SVG, label string, disabled bool) ui.Ele
 	b.Background(bg)
 	return b.Children(func() {
 		if icon != nil {
-			ui.Icon(c, icon).Size(13, 13).TextColor(col)
+			ui.Icon(c, icon).Size(13, 13).TextColor(col).Shrink(0)
 		}
 		ui.Text(c, label).FontSize(12).TextColor(col).FontWeight(500)
 	})
@@ -57,74 +57,130 @@ func PillButton(c *ui.Context, icon *ui.SVG, label string, disabled bool) ui.Ele
 
 // ColorDot renders an anti-aliased Finder tag color dot.
 func ColorDot(c *ui.Context, color ui.Color, size float32) {
-	ui.Box(c).Width(size).Height(size).Radius(size / 2).Background(color).IgnoreInput(true)
+	ui.Box(c).Width(size).Height(size).Radius(size / 2).Background(color).Shrink(0).IgnoreInput(true)
+}
+
+var folderMenuIcon, _ = mygo.NewMenuIconSVG(IcFolder, true)
+
+// compactBreadcrumbs limits breadcrumb depth for long paths with an ellipsis crumb.
+func compactBreadcrumbs(crumbs []domain.PathCrumb) []domain.PathCrumb {
+	if len(crumbs) <= 5 {
+		return crumbs
+	}
+	res := make([]domain.PathCrumb, 0, 5)
+	res = append(res, crumbs[0], domain.PathCrumb{Name: "…", FullPath: ""})
+	return append(res, crumbs[len(crumbs)-3:]...)
 }
 
 // BreadcrumbBar renders clickable path breadcrumb pills.
 func BreadcrumbBar(c *ui.Context, crumbs []domain.PathCrumb, coord *app.Coordinator, onNavigate func(string)) {
 	t := c.Theme()
-	displayCrumbs := crumbs
-	if len(crumbs) > 4 {
-		displayCrumbs = make([]domain.PathCrumb, 0, 4)
-		displayCrumbs = append(displayCrumbs, crumbs[0])
-		displayCrumbs = append(displayCrumbs, domain.PathCrumb{
-			Name:     "…",
-			FullPath: crumbs[len(crumbs)-2].FullPath,
-		})
-		displayCrumbs = append(displayCrumbs, crumbs[len(crumbs)-2])
-		displayCrumbs = append(displayCrumbs, crumbs[len(crumbs)-1])
+	if len(crumbs) == 0 {
+		return
 	}
 
 	ui.ScrollHorizontal(c).Gap(4).AlignItems(ui.Center).Shrink(1).MinWidth(0).Scrollbars(false).Children(func() {
-		for idx, crumb := range displayCrumbs {
-			cCopy := crumb
-			isLast := idx == len(displayCrumbs)-1
-			btn := ui.ButtonBase(c).Padding(2, 6).Radius(4).AlignItems(ui.Center)
-
-			isOver := false
-			if coord != nil && !isLast && cCopy.Name != "…" {
-				isOver = BindFileDropTarget(c, btn, cCopy.FullPath, coord)
-			}
-
-			txtCol := t.TextMuted
-			if isOver {
-				btn.Border(1.5, t.Accent).Background(Pal(t).Hover)
-				txtCol = t.Accent
-			} else if isLast {
-				txtCol = t.Text
-			} else if btn.Hovered() {
-				btn.Background(t.Text.Alpha(0.08))
-				txtCol = t.Text
-			}
-			btn.Children(func() {
-				if cCopy.IsHome {
-					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, IcHome).Size(12, 12).TextColor(txtCol)
-						ui.Text(c, cCopy.Name).FontSize(12).TextColor(txtCol).MaxWidth(110).SingleLine().FontWeight(func() int {
-							if isLast {
-								return 600
-							}
-							return 400
-						}())
-					})
-				} else {
-					ui.Text(c, cCopy.Name).FontSize(12).TextColor(txtCol).MaxWidth(110).SingleLine().FontWeight(func() int {
-						if isLast {
-							return 600
-						}
-						return 400
-					}())
+		if len(crumbs) <= 5 {
+			for idx, crumb := range crumbs {
+				isLast := idx == len(crumbs)-1
+				renderBreadcrumbItem(c, crumb, isLast, t, coord, onNavigate)
+				if !isLast {
+					renderBreadcrumbSeparator(c, t)
 				}
-			})
-			if btn.Clicked() && onNavigate != nil {
-				onNavigate(cCopy.FullPath)
 			}
+			return
+		}
 
+		// First crumb (Home or root)
+		renderBreadcrumbItem(c, crumbs[0], false, t, coord, onNavigate)
+		renderBreadcrumbSeparator(c, t)
+
+		// Folded middle crumbs in popover menu
+		folded := crumbs[1 : len(crumbs)-3]
+		renderFoldedBreadcrumbButton(c, folded, t, onNavigate)
+		renderBreadcrumbSeparator(c, t)
+
+		// Tail 3 crumbs
+		tail := crumbs[len(crumbs)-3:]
+		for idx, crumb := range tail {
+			isLast := idx == len(tail)-1
+			renderBreadcrumbItem(c, crumb, isLast, t, coord, onNavigate)
 			if !isLast {
-				ui.Icon(c, IcChevronRight).Size(10, 10).TextColor(t.TextMuted.Alpha(0.5))
+				renderBreadcrumbSeparator(c, t)
 			}
 		}
 	})
+}
+
+func renderBreadcrumbSeparator(c *ui.Context, t *ui.Theme) {
+	ui.Icon(c, IcChevronRight).Size(10, 10).TextColor(t.TextMuted.Alpha(0.5)).Shrink(0)
+}
+
+func renderFoldedBreadcrumbButton(c *ui.Context, folded []domain.PathCrumb, t *ui.Theme, onNavigate func(string)) {
+	btn := ui.ButtonBase(c).Padding(2, 6).Radius(4).AlignItems(ui.Center).Tooltip("中间路径")
+	if btn.Hovered() {
+		btn.Background(t.Text.Alpha(0.08))
+	}
+	btn.Children(func() {
+		ui.Text(c, "…").FontSize(12).TextColor(t.TextMuted)
+	})
+	btn.PopoverMenuButton(func(m *ui.Menu) {
+		for _, f := range folded {
+			fCopy := f
+			it := m.Item(fCopy.Name)
+			if folderMenuIcon != nil {
+				it.Icon(folderMenuIcon)
+			}
+			if it.Chosen() && onNavigate != nil {
+				onNavigate(fCopy.FullPath)
+			}
+		}
+	}, ui.PopoverMenuButtonOptions{At: ui.AnchorBottomStart, Self: ui.AnchorTopStart})
+}
+
+func renderBreadcrumbItem(c *ui.Context, crumb domain.PathCrumb, isLast bool, t *ui.Theme, coord *app.Coordinator, onNavigate func(string)) {
+	btn := ui.ButtonBase(c).Padding(2, 6).Radius(4).AlignItems(ui.Center)
+	if crumb.FullPath != "" {
+		btn.Tooltip(crumb.FullPath)
+	}
+
+	isOver := false
+	if coord != nil && crumb.FullPath != "" {
+		isOver = BindFileDropTarget(c, btn, crumb.FullPath, coord)
+	}
+
+	txtCol := t.TextMuted
+	if isOver {
+		btn.Border(1.5, t.Accent).Background(Pal(t).Hover)
+		txtCol = t.Accent
+	} else if isLast {
+		txtCol = t.Text
+	} else if btn.Hovered() {
+		btn.Background(t.Text.Alpha(0.08))
+		txtCol = t.Text
+	}
+
+	maxW := float32(140)
+	fw := 400
+	if isLast {
+		maxW = 200
+		fw = 600
+	}
+
+	btn.Children(func() {
+		if crumb.IsHome {
+			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+				ui.Icon(c, IcHome).Size(12, 12).TextColor(txtCol).Shrink(0)
+				ui.Text(c, crumb.Name).FontSize(12).TextColor(txtCol).MaxWidth(maxW).SingleLine().FontWeight(fw)
+			})
+		} else {
+			ui.Text(c, crumb.Name).FontSize(12).TextColor(txtCol).MaxWidth(maxW).SingleLine().FontWeight(fw)
+		}
+	})
+
+	if btn.Clicked() && onNavigate != nil && crumb.FullPath != "" {
+		onNavigate(crumb.FullPath)
+	}
 }
 
 // EmptyCard renders an empty state illustration with title and recovery action.
@@ -134,9 +190,9 @@ func EmptyCard(c *ui.Context, icon *ui.SVG, title, subtitle string, actionBtn fu
 		if icon != nil {
 			ui.Icon(c, icon).Size(48, 48).TextColor(t.TextMuted.Alpha(0.4))
 		}
-		ui.Text(c, title).FontSize(15).FontWeight(600).TextColor(t.Text)
+		ui.Text(c, title).FontSize(15).FontWeight(600).TextColor(t.Text).Balance()
 		if subtitle != "" {
-			ui.Text(c, subtitle).FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, subtitle).FontSize(12).TextColor(t.TextMuted).Pretty()
 		}
 		if actionBtn != nil {
 			ui.Box(c).Height(8)
@@ -153,13 +209,15 @@ func renderInlineRenameInput(c *ui.Context, coord *app.Coordinator, pane *app.Pa
 	input := ui.TextInput(c, &coord.RenameDraft).
 		AutoFocus().
 		Grow(1).
-		MinWidth(80).
+		Shrink(1).
+		MinWidth(40).
 		Padding(2, 6).
 		Radius(4).
 		Background(t.Background).
 		Border(1.5, t.Accent).
 		TextColor(t.Text).
 		CaretWidth(1.5).
+		CaretColor(t.Accent).
 		FontSize(fontSize).
 		SingleLine()
 

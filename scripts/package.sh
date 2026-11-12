@@ -3,7 +3,7 @@ set -euo pipefail
 
 TARGET="${1:-app}"
 ARCH="${ARCH:-$(uname -m)}"
-VERSION="${VERSION:-1.0.0}"
+VERSION="${VERSION:-1.1.0}"
 
 # 归一化架构名
 case "${ARCH}" in

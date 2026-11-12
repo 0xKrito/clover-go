@@ -20,8 +20,8 @@ func IconGridViewForPane(c *ui.Context, coord *app.Coordinator, pane *app.PaneSt
 	})
 
 	iconSize := float32(coord.GridIconSize)
-	cellW := iconSize + 28
-	cellH := iconSize + 44
+	cellW := iconSize + 36
+	cellH := iconSize + 52
 
 	container.Children(func() {
 		grid := ui.GridView(c, &pane.GridState, n, cellW, cellH, func(i int) {
@@ -165,5 +165,5 @@ func renderGridLabel(c *ui.Context, coord *app.Coordinator, pane *app.PaneState,
 	if isSelected {
 		txtCol = t.Accent
 	}
-	ui.Text(c, item.Name).FontSize(11).TextColor(txtCol).Lines(1, 2).TextAlign(ui.Center)
+	ui.Text(c, item.Name).FontSize(11).TextColor(txtCol).Lines(1, 2).TextAlign(ui.Center).FillWidth().Tooltip(item.Name)
 }

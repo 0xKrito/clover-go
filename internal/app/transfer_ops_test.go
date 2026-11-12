@@ -48,7 +48,15 @@ func TestTransferFiles_MoveAndCopy(t *testing.T) {
 	if _, err := os.Stat(file1); err != nil {
 		t.Errorf("source file should still exist after copy")
 	}
-	time.Sleep(50 * time.Millisecond)
+	for i := 0; i < 50; i++ {
+		mainMu.Lock()
+		busy := coord.TransferBusy
+		mainMu.Unlock()
+		if !busy {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	// Test Move
 	file2 := filepath.Join(srcDir, "item2.txt")
@@ -63,6 +71,15 @@ func TestTransferFiles_MoveAndCopy(t *testing.T) {
 	}
 	if _, err := os.Stat(target2); err != nil {
 		t.Errorf("expected moved file to exist at %s", target2)
+	}
+	for i := 0; i < 50; i++ {
+		mainMu.Lock()
+		busy := coord.TransferBusy
+		mainMu.Unlock()
+		if !busy {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

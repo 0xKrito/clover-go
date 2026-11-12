@@ -76,61 +76,59 @@ func renderBatchRenameModal(c *ui.Context, coord *app.Coordinator) {
 		dialog.Shadow(0, 8, 24, 0, ui.Hex("#000000").Alpha(0.25))
 
 		dialog.Children(func() {
-			// Title Header
-			ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
-				title := fmt.Sprintf("批量重命名 (%d 个项目)", len(coord.BatchRenameItems))
-				ui.Text(c, title).FontSize(14).FontWeight(600).TextColor(t.Text)
-
-				btnClose := ui.ButtonBase(c).Padding(2).Radius(3).AlignItems(ui.Center)
-				btnClose.Children(func() {
-					ui.Icon(c, IcClose).Size(12, 12).TextColor(t.TextMuted)
-				})
-				if btnClose.Clicked() {
-					coord.CloseBatchRename()
-				}
-			})
-
+			renderBatchRenameHeader(c, coord)
 			ui.Box(c).Height(1).Background(pal.Line)
 
-			// Mode Selector tabs
 			renderModeSelector(c, coord)
-
-			// Input Fields according to Mode
 			renderModeInputs(c, coord)
-
-			// Real-time Before/After preview table (DirDeck style)
 			renderBatchRenamePreviewTable(c, coord)
 
-			// Execution errors (validation, on-disk collisions, partial
-			// failures) are surfaced here instead of failing silently.
 			if coord.BatchRenameError != "" {
 				ui.Text(c, "错误："+coord.BatchRenameError).FontSize(11).TextColor(ui.Hex("#E5484D")).Wrap()
 			}
 
-			// Actions Footer
-			ui.Row(c).Justify(ui.End).Gap(10).Children(func() {
-				btnCancel := ui.ButtonBase(c).Padding(6, 14).Radius(6).AlignItems(ui.Center)
-				if btnCancel.Hovered() {
-					btnCancel.Background(t.Text.Alpha(0.08))
-				}
-				btnCancel.Children(func() {
-					ui.Text(c, "取消").FontSize(12).TextColor(t.Text)
-				})
-				if btnCancel.Clicked() {
-					coord.CloseBatchRename()
-				}
-
-				btnOk := ui.ButtonBase(c).Padding(6, 16).Radius(6).Background(t.Accent).AlignItems(ui.Center)
-				btnOk.Children(func() {
-					ui.Text(c, "重命名").FontSize(12).FontWeight(600).TextColor(ui.Hex("#FFFFFF"))
-				})
-				if btnOk.Clicked() {
-					// Errors are stored in coord.BatchRenameError and rendered
-					// above; the modal stays open for correction.
-					_ = coord.ExecuteBatchRename()
-				}
-			})
+			renderBatchRenameFooter(c, coord)
 		})
+	})
+}
+
+func renderBatchRenameHeader(c *ui.Context, coord *app.Coordinator) {
+	t := c.Theme()
+	ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
+		title := fmt.Sprintf("批量重命名 (%d 个项目)", len(coord.BatchRenameItems))
+		ui.Text(c, title).FontSize(14).FontWeight(600).TextColor(t.Text)
+
+		btnClose := ui.ButtonBase(c).Padding(2).Radius(3).AlignItems(ui.Center)
+		btnClose.Children(func() {
+			ui.Icon(c, IcClose).Size(12, 12).TextColor(t.TextMuted)
+		})
+		if btnClose.Clicked() {
+			coord.CloseBatchRename()
+		}
+	})
+}
+
+func renderBatchRenameFooter(c *ui.Context, coord *app.Coordinator) {
+	t := c.Theme()
+	ui.Row(c).Justify(ui.End).Gap(10).Children(func() {
+		btnCancel := ui.ButtonBase(c).Padding(6, 14).Radius(6).AlignItems(ui.Center)
+		if btnCancel.Hovered() {
+			btnCancel.Background(t.Text.Alpha(0.08))
+		}
+		btnCancel.Children(func() {
+			ui.Text(c, "取消").FontSize(12).TextColor(t.Text)
+		})
+		if btnCancel.Clicked() {
+			coord.CloseBatchRename()
+		}
+
+		btnOk := ui.ButtonBase(c).Padding(6, 16).Radius(6).Background(t.Accent).AlignItems(ui.Center)
+		btnOk.Children(func() {
+			ui.Text(c, "重命名").FontSize(12).FontWeight(600).TextColor(ui.Hex("#FFFFFF"))
+		})
+		if btnOk.Clicked() {
+			_ = coord.ExecuteBatchRename()
+		}
 	})
 }
 
@@ -291,9 +289,9 @@ func renderBatchRenamePreviewTable(c *ui.Context, coord *app.Coordinator) {
 
 	ui.Column(c).MaxHeight(130).Radius(6).Background(pal.Inset).Padding(8, 10).Gap(4).Children(func() {
 		ui.Row(c).Height(18).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "原文件名").FontSize(10).FontWeight(600).TextColor(t.TextMuted).Grow(1)
-			ui.Text(c, "→").FontSize(10).TextColor(t.TextMuted)
-			ui.Text(c, "重命名为").FontSize(10).FontWeight(600).TextColor(t.TextMuted).Grow(1)
+			ui.Text(c, "原文件名").FontSize(10).FontWeight(600).TextColor(t.TextMuted).Grow(1).Shrink(1).MinWidth(0).SingleLine()
+			ui.Text(c, "→").FontSize(10).TextColor(t.TextMuted).Shrink(0)
+			ui.Text(c, "重命名为").FontSize(10).FontWeight(600).TextColor(t.TextMuted).Grow(1).Shrink(1).MinWidth(0).SingleLine()
 		})
 		ui.Box(c).Height(1).Background(pal.Line)
 
@@ -311,13 +309,13 @@ func renderBatchRenamePreviewTable(c *ui.Context, coord *app.Coordinator) {
 		for i := 0; i < limit; i++ {
 			p := pairs[i]
 			ui.Row(c).Height(18).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, p.OldName).FontSize(11).TextColor(t.TextMuted).Grow(1).SingleLine()
-				ui.Text(c, "→").FontSize(10).TextColor(t.Accent)
+				ui.Text(c, p.OldName).FontSize(11).TextColor(t.TextMuted).Grow(1).Shrink(1).MinWidth(0).SingleLine().Tooltip(p.OldName)
+				ui.Text(c, "→").FontSize(10).TextColor(t.Accent).Shrink(0)
 				newColor := t.Text
 				if p.Changed {
 					newColor = t.Accent
 				}
-				ui.Text(c, p.NewName).FontSize(11).TextColor(newColor).Grow(1).SingleLine()
+				ui.Text(c, p.NewName).FontSize(11).TextColor(newColor).Grow(1).Shrink(1).MinWidth(0).SingleLine().Tooltip(p.NewName)
 			})
 		}
 		if len(pairs) > limit {

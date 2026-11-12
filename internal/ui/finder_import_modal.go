@@ -5,6 +5,7 @@ import (
 
 	"github.com/bighaidao/clover-go/internal/app"
 	"github.com/bighaidao/clover-go/internal/domain"
+	"github.com/egoist/mygo/plugins/permissionflow"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -82,7 +83,7 @@ func renderFinderImportBody(c *ui.Context, coord *app.Coordinator) {
 	})
 
 	// Items list
-	ui.Column(c).MaxHeight(220).Radius(4).Border(1, pal.Line).Padding(4).Gap(2).Children(func() {
+	ui.Scroll(c).MaxHeight(220).Radius(4).Border(1, pal.Line).Padding(4).Gap(2).Children(func() {
 		if len(coord.FinderFavorites) == 0 {
 			ui.Text(c, "未检测到系统访达收藏项").FontSize(11).TextColor(t.TextMuted).Padding(8)
 			return
@@ -91,6 +92,27 @@ func renderFinderImportBody(c *ui.Context, coord *app.Coordinator) {
 		for i := range coord.FinderFavorites {
 			it := &coord.FinderFavorites[i]
 			renderFavRow(c, it)
+		}
+	})
+
+	if len(coord.FinderFavorites) == 0 || coord.FinderImportError != "" {
+		renderFullDiskAccessGuide(c, coord)
+	}
+}
+
+// renderFullDiskAccessGuide sends the user to the macOS Full Disk Access page,
+// which the Finder favorites file requires.
+func renderFullDiskAccessGuide(c *ui.Context, coord *app.Coordinator) {
+	t := c.Theme()
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		btn := ui.ButtonBase(c).Padding(4, 10).Radius(4).Background(t.Accent.Alpha(0.15))
+		btn.Children(func() {
+			ui.Text(c, "授权完全磁盘访问权限…").FontSize(11).TextColor(t.Accent).SingleLine()
+		})
+		if btn.Clicked() {
+			if err := permissionflow.OpenSettings(permissionflow.FullDiskAccess); err != nil {
+				coord.FinderImportError = err.Error()
+			}
 		}
 	})
 }
@@ -114,9 +136,9 @@ func renderFavRow(c *ui.Context, it *domain.FinderFavoriteItem) {
 			checkCol = t.TextMuted
 		}
 
-		ui.Text(c, check).FontSize(11).TextColor(checkCol)
-		ui.Icon(c, IcFolder).Size(12, 12).TextColor(t.Accent)
-		ui.Text(c, it.Name).FontSize(11).FontWeight(500).TextColor(t.Text).Width(110).SingleLine()
+		ui.Text(c, check).FontSize(11).TextColor(checkCol).Shrink(0)
+		ui.Icon(c, IcFolder).Size(12, 12).TextColor(t.Accent).Shrink(0)
+		ui.Text(c, it.Name).FontSize(11).FontWeight(500).TextColor(t.Text).Width(110).SingleLine().Shrink(0).Tooltip(it.Name)
 
 		pathCol := t.TextMuted
 		pathText := it.Path
@@ -124,7 +146,7 @@ func renderFavRow(c *ui.Context, it *domain.FinderFavoriteItem) {
 			pathText += " (路径不存在)"
 			pathCol = ui.Hex("#FF3B30")
 		}
-		ui.Text(c, pathText).FontSize(10).TextColor(pathCol).Grow(1).SingleLine()
+		ui.Text(c, pathText).FontSize(10).TextColor(pathCol).Grow(1).Shrink(1).MinWidth(0).SingleLine().Tooltip(it.Path)
 	})
 
 	if it.Exists && row.Clicked() {

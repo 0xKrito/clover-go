@@ -94,6 +94,7 @@ func BuildTheme(dark bool) *ui.Theme {
 		t.Accent = ui.Hex("#0A84FF")
 		t.AccentHover = ui.Hex("#2E97FF")
 		t.AccentPressed = ui.Hex("#006CE6")
+		t.InactiveAccent = ui.Hex("#555558")
 		t.Danger = ui.Hex("#FF453A")
 		t.Warning = ui.Hex("#FF9F0A")
 		t.Success = ui.Hex("#30D158")
@@ -114,6 +115,7 @@ func BuildTheme(dark bool) *ui.Theme {
 	t.Accent = ui.Hex("#007AFF")
 	t.AccentHover = ui.Hex("#1A88FF")
 	t.AccentPressed = ui.Hex("#0062CC")
+	t.InactiveAccent = ui.Hex("#8E8E93")
 	t.Danger = ui.Hex("#E5342A")
 	t.Warning = ui.Hex("#D97E00")
 	t.Success = ui.Hex("#24A148")
@@ -133,6 +135,11 @@ func BuildThemeColor(dark bool, hexColor string) *ui.Theme {
 	t.Accent = acc
 	t.AccentHover = acc.Mix(ui.RGB(255, 255, 255), 0.1)
 	t.AccentPressed = acc.Mix(ui.RGB(0, 0, 0), 0.15)
+	if dark {
+		t.InactiveAccent = acc.Mix(ui.Hex("#555558"), 0.65)
+	} else {
+		t.InactiveAccent = acc.Mix(ui.Hex("#8E8E93"), 0.65)
+	}
 	return t
 }
 

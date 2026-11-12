@@ -16,6 +16,7 @@ import (
 // ShowFileContextMenu renders the comprehensive right-click context menu for
 // a file item; the sections live in the context*Actions helpers below.
 func ShowFileContextMenu(m *ui.Menu, c *ui.Context, coord *app.Coordinator, pane *app.PaneState, item domain.FileInfo, i int) {
+	m.MaxWidth(360)
 	if fs.IsArchiveVirtualPath(pane.Path) {
 		showArchiveItemContextMenu(m, coord, pane, item)
 		return
@@ -37,19 +38,19 @@ func ShowFileContextMenu(m *ui.Menu, c *ui.Context, coord *app.Coordinator, pane
 	m.Separator()
 	contextRenameActions(m, coord, pane, i)
 	m.Separator()
-	contextTagTrashActions(m, coord, pane, item)
+	contextTagTrashActions(m, c, coord, pane, item)
 }
 
 // showArchiveItemContextMenu provides a safe read-only context menu inside virtual archives.
 func showArchiveItemContextMenu(m *ui.Menu, coord *app.Coordinator, pane *app.PaneState, item domain.FileInfo) {
-	if m.Item("快速查看 (空格)").Chosen() {
+	if m.Item("快速查看").Trailing("空格").Chosen() {
 		if !item.IsDir {
 			if tmpPath, err := fs.ExtractArchiveFileToTemp(item.Path); err == nil {
 				macos.ToggleQuickLook(tmpPath)
 			}
 		}
 	}
-	if m.Item("显示/隐藏预览栏 (⌘I)").Chosen() {
+	if m.Item("显示/隐藏预览栏").Trailing("⌘I").Chosen() {
 		coord.TogglePreview()
 		if coord.ShowPreview {
 			coord.LoadPreview(item, nil)
@@ -75,12 +76,12 @@ func showArchiveItemContextMenu(m *ui.Menu, coord *app.Coordinator, pane *app.Pa
 // contextOpenActions renders Quick Look / preview toggle / open / new tab / package-content entries.
 func contextOpenActions(m *ui.Menu, c *ui.Context, coord *app.Coordinator, pane *app.PaneState, item domain.FileInfo) {
 	// 1. 快速查看 (Native macOS QLPreviewPanel)
-	if m.Item("快速查看 (空格)").Chosen() {
+	if m.Item("快速查看").Trailing("空格").Chosen() {
 		macos.ToggleQuickLook(item.Path)
 	}
 
 	// 2. 预览栏显隐切换 (Inspector Pane)
-	if m.Item("显示/隐藏预览栏 (⌘I)").Chosen() {
+	if m.Item("显示/隐藏预览栏").Trailing("⌘I").Chosen() {
 		coord.TogglePreview()
 		if coord.ShowPreview {
 			coord.LoadPreview(item, nil)
@@ -178,7 +179,7 @@ func contextSystemActions(m *ui.Menu, coord *app.Coordinator, item domain.FileIn
 		mygo.Shell.ShowItemInFolder(item.Path)
 	}
 
-	if m.Item("复制绝对路径 (⌥⌘C)").Chosen() {
+	if m.Item("复制绝对路径").Trailing("⌥⌘C").Chosen() {
 		_ = macos.CopyPath(item.Path, "posix")
 	}
 
@@ -192,10 +193,10 @@ func contextSystemActions(m *ui.Menu, coord *app.Coordinator, item domain.FileIn
 
 // contextClipboardActions renders cut/copy plus zip compress/extract entries.
 func contextClipboardActions(m *ui.Menu, coord *app.Coordinator, pane *app.PaneState, item domain.FileInfo) {
-	if m.Item("剪切 (⌘X)").Chosen() {
+	if m.Item("剪切").Trailing("⌘X").Chosen() {
 		coord.CutSelected(pane)
 	}
-	if m.Item("复制 (⌘C)").Chosen() {
+	if m.Item("复制").Trailing("⌘C").Chosen() {
 		coord.CopySelected(pane)
 	}
 
@@ -216,7 +217,7 @@ func contextRenameActions(m *ui.Menu, coord *app.Coordinator, pane *app.PaneStat
 		coord.StartRename(pane, i)
 	}
 	if len(coord.SelectedItems(pane)) > 1 {
-		if m.Item("批量重命名 (⇧⌘R)").Chosen() {
+		if m.Item("批量重命名").Trailing("⇧⌘R").Chosen() {
 			coord.OpenBatchRename(pane)
 		}
 	}
@@ -225,66 +226,23 @@ func contextRenameActions(m *ui.Menu, coord *app.Coordinator, pane *app.PaneStat
 	}
 }
 
-// contextTagTrashActions renders Finder color tags submenu and trash entry.
-func contextTagTrashActions(m *ui.Menu, coord *app.Coordinator, pane *app.PaneState, item domain.FileInfo) {
-	m.Submenu("标记颜色", func(sub *ui.Menu) {
-		tags := []struct {
-			Idx  int
-			Name string
-		}{
-			{macos.TagRed, "红色"},
-			{macos.TagOrange, "橙色"},
-			{macos.TagYellow, "黄色"},
-			{macos.TagGreen, "绿色"},
-			{macos.TagBlue, "蓝色"},
-			{macos.TagPurple, "紫色"},
-			{macos.TagGray, "灰色"},
-		}
-		currentTag := macos.ColorIndexFromTags(item.ColorTags)
-		for _, tg := range tags {
-			tIdx := tg.Idx
-			tName := tg.Name
-			if sub.Item(tName).Radio(currentTag == tIdx).Chosen() {
-				_ = macos.SetFileTag(item.Path, tIdx)
-				applyTagToPaneItem(pane, item.Path, []string{tName})
-				if coord.CurrentPreview != nil && coord.CurrentPreview.Path == item.Path {
-					coord.CurrentPreview.ColorTag = tIdx
-				}
-				coord.Invalidate()
-			}
-		}
-		sub.Separator()
-		if sub.Item("清除颜色").Chosen() {
-			_ = macos.RemoveFileTags(item.Path)
-			applyTagToPaneItem(pane, item.Path, nil)
-			if coord.CurrentPreview != nil && coord.CurrentPreview.Path == item.Path {
-				coord.CurrentPreview.ColorTag = macos.TagNone
-			}
-			coord.Invalidate()
-		}
-	})
-
-	if m.Item("移到废纸篓 (⌘⌫)").Chosen() {
-		coord.TrashSelected(pane)
-	}
-}
-
 // ShowEmptyAreaContextMenu renders the context menu for background blank area.
 func ShowEmptyAreaContextMenu(m *ui.Menu, coord *app.Coordinator, pane *app.PaneState) {
+	m.MaxWidth(320)
 	currentPath := pane.Path
 	if fs.IsArchiveVirtualPath(currentPath) {
 		showArchiveEmptyAreaMenu(m, coord, pane)
 		return
 	}
 
-	if m.Item("新建文件夹 (⇧⌘N)").Chosen() {
+	if m.Item("新建文件夹").Trailing("⇧⌘N").Chosen() {
 		_, _ = coord.CreateNewFolder(pane, "未命名文件夹")
 	}
 
-	if m.Item("全选 (⌘A)").Chosen() {
+	if m.Item("全选").Trailing("⌘A").Chosen() {
 		coord.SelectAll(pane)
 	}
-	if m.Item("刷新 (⌘R)").Chosen() {
+	if m.Item("刷新").Trailing("⌘R").Chosen() {
 		coord.LoadPane(pane, nil)
 	}
 
@@ -300,7 +258,7 @@ func ShowEmptyAreaContextMenu(m *ui.Menu, coord *app.Coordinator, pane *app.Pane
 	}
 
 	if len(coord.Clipboard.Paths) > 0 {
-		if m.Item("粘贴项目 (⌘V)").Chosen() {
+		if m.Item("粘贴项目").Trailing("⌘V").Chosen() {
 			coord.Paste(pane)
 		}
 	}
@@ -333,23 +291,7 @@ func showArchiveEmptyAreaMenu(m *ui.Menu, coord *app.Coordinator, pane *app.Pane
 	if m.Item("复制当前虚拟路径").Chosen() {
 		_ = macos.CopyPath(pane.Path, "posix")
 	}
-	if m.Item("刷新 (⌘R)").Chosen() {
+	if m.Item("刷新").Trailing("⌘R").Chosen() {
 		coord.LoadCurrentTab(nil)
-	}
-}
-
-func applyTagToPaneItem(pane *app.PaneState, path string, tags []string) {
-	if pane == nil {
-		return
-	}
-	for i := range pane.Entries {
-		if pane.Entries[i].Path == path {
-			pane.Entries[i].ColorTags = tags
-		}
-	}
-	for i := range pane.DisplayEntries {
-		if pane.DisplayEntries[i].Path == path {
-			pane.DisplayEntries[i].ColorTags = tags
-		}
 	}
 }

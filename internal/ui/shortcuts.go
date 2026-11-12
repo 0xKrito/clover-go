@@ -93,9 +93,10 @@ func (s *AppState) handleEditAndViewShortcuts(c *ui.Context, coord *app.Coordina
 	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyR) {
 		coord.OpenBatchRename(activePane)
 	}
-	// Reload the active pane's directory (⌘R)
+	// Reload the active pane's directory (⌘R)：手动刷新强制重读，
+	// 不被搜索模式的静默跳过拦下。
 	if c.Shortcut(ui.Cmd, ui.KeyR) {
-		coord.LoadCurrentTab(nil)
+		coord.ReloadCurrentTab()
 	}
 	// View mode shortcuts (⌘1 List, ⌘2 Grid)
 	if c.Shortcut(ui.Cmd, ui.Key1) {

@@ -13,27 +13,29 @@ func TabBarView(c *ui.Context, coord *app.Coordinator, onTabSelect func(int), on
 
 	ui.Row(c).Height(32).Background(pal.Sidebar).AlignItems(ui.End).DragWindow().Children(func() {
 		// Left margin
-		ui.Box(c).Width(8).Height(32)
+		ui.Box(c).Width(8).Height(32).Shrink(0)
 
-		// 1. Tab Items
-		for i, tab := range tm.Tabs {
-			idx := i
-			tabState := tab
-			isActive := idx == tm.ActiveIndex
+		// 1. Tab Items (with horizontal scroll and shrink protection)
+		ui.ScrollHorizontal(c).Shrink(1).MinWidth(0).AlignItems(ui.End).Scrollbars(false).Children(func() {
+			for i, tab := range tm.Tabs {
+				idx := i
+				tabState := tab
+				isActive := idx == tm.ActiveIndex
 
-			renderTab(c, coord, tabState, idx, isActive, func() {
-				if onTabSelect != nil {
-					onTabSelect(idx)
-				}
-			}, func() {
-				if onTabClose != nil {
-					onTabClose(idx)
-				}
-			})
-		}
+				renderTab(c, coord, tabState, idx, isActive, func() {
+					if onTabSelect != nil {
+						onTabSelect(idx)
+					}
+				}, func() {
+					if onTabClose != nil {
+						onTabClose(idx)
+					}
+				})
+			}
+		})
 
 		// 2. New Tab Button (+)
-		btnNew := ui.ButtonBase(c).Label("新建标签 (⌘T)").Padding(6).Radius(5).AlignItems(ui.Center)
+		btnNew := ui.ButtonBase(c).Label("新建标签 (⌘T)").Padding(6).Radius(5).AlignItems(ui.Center).Shrink(0)
 		if btnNew.Hovered() {
 			btnNew.Background(t.Text.Alpha(0.08))
 		}
@@ -53,7 +55,12 @@ func renderTab(c *ui.Context, coord *app.Coordinator, tab *app.TabState, idx int
 	t := c.Theme()
 	pal := Pal(t)
 
-	btn := ui.ButtonBase(c).Radius(6, 6, 0, 0).AlignItems(ui.Center).MinHeight(32)
+	btn := ui.ButtonBase(c).Radius(6, 6, 0, 0).AlignItems(ui.Center).MinHeight(32).Shrink(0)
+	if tab.IsPinned {
+		btn.Tooltip(tab.Title + "\n" + tab.ActivePane().Path)
+	} else {
+		btn.Tooltip(tab.ActivePane().Path)
+	}
 	isOver := BindFileDropTarget(c, btn, tab.ActivePane().Path, coord)
 
 	bg := ui.Transparent
@@ -71,7 +78,17 @@ func renderTab(c *ui.Context, coord *app.Coordinator, tab *app.TabState, idx int
 	}
 	btn.Background(bg)
 
-	// Context menu for Tab
+	bindTabContextMenu(btn, coord, idx, tab, onClose)
+
+	if tab.IsPinned {
+		renderPinnedTab(c, btn, txtCol, onSelect)
+		return
+	}
+
+	renderNormalTab(c, btn, tab, isActive, txtCol, onSelect, onClose)
+}
+
+func bindTabContextMenu(btn ui.Element, coord *app.Coordinator, idx int, tab *app.TabState, onClose func()) {
 	btn.ContextMenu(func(m *ui.Menu) {
 		pinLabel := "固定标签"
 		if tab.IsPinned {
@@ -108,18 +125,11 @@ func renderTab(c *ui.Context, coord *app.Coordinator, tab *app.TabState, idx int
 			}
 		}
 	})
-
-	if tab.IsPinned {
-		renderPinnedTab(c, btn, txtCol, onSelect)
-		return
-	}
-
-	renderNormalTab(c, btn, tab, isActive, txtCol, onSelect, onClose)
 }
 
 func renderPinnedTab(c *ui.Context, btn ui.Element, txtCol ui.Color, onSelect func()) {
 	btn.Padding(6, 10).Children(func() {
-		ui.Icon(c, IcFolder).Size(14, 14).TextColor(txtCol)
+		ui.Icon(c, IcFolder).Size(14, 14).TextColor(txtCol).Shrink(0)
 	})
 	if btn.Clicked() && onSelect != nil {
 		onSelect()
@@ -129,7 +139,7 @@ func renderPinnedTab(c *ui.Context, btn ui.Element, txtCol ui.Color, onSelect fu
 func renderNormalTab(c *ui.Context, btn ui.Element, tab *app.TabState, isActive bool, txtCol ui.Color, onSelect, onClose func()) {
 	t := c.Theme()
 	btn.Padding(6, 12).Gap(8).Children(func() {
-		ui.Icon(c, IcFolder).Size(13, 13).TextColor(txtCol)
+		ui.Icon(c, IcFolder).Size(13, 13).TextColor(txtCol).Shrink(0)
 
 		ui.Column(c).Gap(1).Children(func() {
 			ui.Text(c, tab.Title).FontSize(12).FontWeight(func() int {
@@ -137,20 +147,20 @@ func renderNormalTab(c *ui.Context, btn ui.Element, tab *app.TabState, isActive 
 					return 500
 				}
 				return 400
-			}()).TextColor(txtCol).SingleLine()
+			}()).TextColor(txtCol).MaxWidth(160).SingleLine().Shrink(1).MinWidth(0)
 
 			if tab.Subtitle != "" {
-				ui.Text(c, tab.Subtitle).FontSize(9).TextColor(t.TextMuted).SingleLine()
+				ui.Text(c, tab.Subtitle).FontSize(9).TextColor(t.TextMuted).MaxWidth(160).SingleLine().Shrink(1).MinWidth(0)
 			}
 		})
 
 		// Close Tab Button (x)
-		btnClose := ui.ButtonBase(c).Label("关闭标签").Padding(2).Radius(3).AlignItems(ui.Center)
+		btnClose := ui.ButtonBase(c).Label("关闭标签").Padding(2).Radius(3).AlignItems(ui.Center).Shrink(0)
 		if btnClose.Hovered() {
 			btnClose.Background(t.Text.Alpha(0.12))
 		}
 		btnClose.Children(func() {
-			ui.Icon(c, IcClose).Size(10, 10).TextColor(t.TextMuted)
+			ui.Icon(c, IcClose).Size(10, 10).TextColor(t.TextMuted).Shrink(0)
 		})
 		if btnClose.Clicked() && onClose != nil {
 			onClose()

@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${ROOT_DIR}/build"
 APP_NAME="CloverGo.app"
 APP_DIR="${BUILD_DIR}/${APP_NAME}"
-DMG_NAME="CloverGo-1.0.0-arm64.dmg"
+DMG_NAME="CloverGo-1.1.0-arm64.dmg"
 DMG_PATH="${BUILD_DIR}/${DMG_NAME}"
 
 echo "=================================================="
@@ -61,9 +61,9 @@ cat <<EOF > "${APP_DIR}/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.1.0</string>
     <key>CFBundleVersion</key>
-    <string>100</string>
+    <string>110</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>NSHighResolutionCapable</key>

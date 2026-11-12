@@ -96,6 +96,11 @@ type Coordinator struct {
 	HideColSize        bool
 	HideColKind        bool
 
+	// Drag-resize state (memory-only during drag, flushed on DragEnded, reverted on PressCanceled)
+	previewDragStart  float32
+	isDraggingPreview bool
+	colDragStart      map[string]float32
+
 	// Toast notification
 	ToastMessage string
 	ToastPending bool // 触发 mygo 原生 c.Toast 浮动提示的一帧标志
@@ -222,6 +227,7 @@ func NewCoordinator(initialPath string, prefs *config.PrefsManager, ws *config.W
 		HideColKind:        p.HideColKind,
 		SettingsActiveTab:  "general",
 		runOnMain:          runner,
+		colDragStart:       make(map[string]float32),
 	}
 	// Newly created panes (tabs, dual-pane right panes) start with the
 	// user's preferred default ordering.
@@ -273,9 +279,77 @@ func (c *Coordinator) SetDefaultSortAndResort(field domain.SortField, dir domain
 	c.Invalidate()
 }
 
-// UpdateColWidth adjusts the width of a specified column by dx DIPs (clamped within safe bounds)
-// and persists the updated width.
-func (c *Coordinator) UpdateColWidth(col string, dx float32) {
+// UpdatePreviewWidthInMemory updates PreviewWidth in memory during drag without disk write.
+func (c *Coordinator) UpdatePreviewWidthInMemory(dx float32) {
+	if !c.isDraggingPreview {
+		c.previewDragStart = c.PreviewWidth
+		c.isDraggingPreview = true
+	}
+	newW := c.PreviewWidth - dx
+	if newW < 180 {
+		newW = 180
+	} else if newW > 500 {
+		newW = 500
+	}
+	c.PreviewWidth = newW
+	c.Invalidate()
+}
+
+// EndPreviewDrag persists the final preview width to preferences.
+func (c *Coordinator) EndPreviewDrag() {
+	if !c.isDraggingPreview {
+		return
+	}
+	c.isDraggingPreview = false
+	if c.Prefs != nil {
+		p := c.Prefs.Get()
+		p.PreviewWidth = c.PreviewWidth
+		_ = c.Prefs.Save(p)
+	}
+}
+
+// CancelPreviewDrag restores the preview width before dragging started.
+func (c *Coordinator) CancelPreviewDrag() {
+	if c.isDraggingPreview {
+		c.PreviewWidth = c.previewDragStart
+		c.isDraggingPreview = false
+		c.Invalidate()
+	}
+}
+
+func (c *Coordinator) getColWidth(col string) float32 {
+	switch col {
+	case "name":
+		return c.ColWidthName
+	case "create_time":
+		return c.ColWidthCreateTime
+	case "mod_time":
+		return c.ColWidthModTime
+	case "size":
+		return c.ColWidthSize
+	case "kind":
+		return c.ColWidthKind
+	default:
+		return 100
+	}
+}
+
+func (c *Coordinator) setColWidth(col string, w float32) {
+	switch col {
+	case "name":
+		c.ColWidthName = w
+	case "create_time":
+		c.ColWidthCreateTime = w
+	case "mod_time":
+		c.ColWidthModTime = w
+	case "size":
+		c.ColWidthSize = w
+	case "kind":
+		c.ColWidthKind = w
+	}
+}
+
+func (c *Coordinator) applyColDelta(col string, dx float32) {
 	switch col {
 	case "name":
 		w := c.ColWidthName + dx
@@ -319,6 +393,43 @@ func (c *Coordinator) UpdateColWidth(col string, dx float32) {
 		}
 		c.ColWidthKind = w
 	}
+}
+
+// DragColWidth adjusts column width in memory during dragging without saving to prefs.
+func (c *Coordinator) DragColWidth(col string, dx float32) {
+	if c.colDragStart == nil {
+		c.colDragStart = make(map[string]float32)
+	}
+	if _, ok := c.colDragStart[col]; !ok {
+		c.colDragStart[col] = c.getColWidth(col)
+	}
+	c.applyColDelta(col, dx)
+	c.Invalidate()
+}
+
+// EndColDrag commits column widths to preferences upon drag release.
+func (c *Coordinator) EndColDrag() {
+	if len(c.colDragStart) > 0 {
+		c.colDragStart = make(map[string]float32)
+		c.SaveColWidths()
+	}
+}
+
+// CancelColDrag rolls back the column width to the start of the drag.
+func (c *Coordinator) CancelColDrag(col string) {
+	if c.colDragStart != nil {
+		if start, ok := c.colDragStart[col]; ok {
+			c.setColWidth(col, start)
+			delete(c.colDragStart, col)
+			c.Invalidate()
+		}
+	}
+}
+
+// UpdateColWidth adjusts the width of a specified column by dx DIPs (clamped within safe bounds)
+// and persists the updated width.
+func (c *Coordinator) UpdateColWidth(col string, dx float32) {
+	c.applyColDelta(col, dx)
 	c.SaveColWidths()
 	c.Invalidate()
 }
@@ -518,6 +629,15 @@ func (c *Coordinator) LoadCurrentTab(onDone func()) {
 
 	c.restartSecondaryWatcher("")
 	c.LoadPane(&tab.PaneState, onDone)
+}
+
+// ReloadCurrentTab 强制重读当前标签页的目录：刷新按钮与 ⌘R 的入口。
+// 与 watcher 触发的静默重载不同，它总是重新读取磁盘，即使 pane 正处于搜索
+// 模式（随后回到真实目录列表），避免手动刷新被无声忽略。
+func (c *Coordinator) ReloadCurrentTab() {
+	// LoadCurrentTab 以 onDone 是否为 nil 区分“用户主动”与“静默重载”：
+	// 传一个非 nil 的回调即表示必须重载。
+	c.LoadCurrentTab(func() {})
 }
 
 // ApplyFilter computes DisplayEntries according to current FilterQuery and FilterTag.

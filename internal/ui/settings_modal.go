@@ -101,7 +101,7 @@ func AboutModal(c *ui.Context, coord *app.Coordinator) {
 		dialog.Children(func() {
 			ui.Icon(c, IcFolder).Size(48, 48).TextColor(t.Accent)
 			ui.Text(c, "CloverGo").FontSize(18).FontWeight(700).TextColor(t.Text)
-			ui.Text(c, "版本 1.0.0 (Pure Go + MyGo Metal GPU)").FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, "版本 1.1.0 (Pure Go + MyGo Metal GPU)").FontSize(11).TextColor(t.TextMuted)
 
 			ui.Box(c).Height(1).FillWidth().Background(pal.Line)
 
@@ -113,7 +113,7 @@ func AboutModal(c *ui.Context, coord *app.Coordinator) {
 				ui.Text(c, "检查更新… (⌥⌘U)").FontSize(11).TextColor(t.Text)
 			})
 			if btnCheck.Clicked() {
-				coord.Toast("当前已是最新版本 (v1.0.0)")
+				coord.Toast("当前已是最新版本 (v1.1.0)")
 			}
 
 			ui.Box(c).Height(1).FillWidth().Background(pal.Line)
@@ -302,7 +302,7 @@ func renderAboutTab(c *ui.Context, coord *app.Coordinator) {
 	ui.Column(c).Gap(8).AlignItems(ui.Center).Padding(10).Children(func() {
 		ui.Icon(c, IcFolder).Size(36, 36).TextColor(t.Accent)
 		ui.Text(c, "CloverGo").FontSize(16).FontWeight(700).TextColor(t.Text)
-		ui.Text(c, "版本 1.0.0 (Pure Go + MyGo Metal GPU)").FontSize(11).TextColor(t.TextMuted)
+		ui.Text(c, "版本 1.1.0 (Pure Go + MyGo Metal GPU)").FontSize(11).TextColor(t.TextMuted)
 		ui.Text(c, "极速原生双栏文件管理器 · 全场景跨栏拖拽转移").FontSize(11).TextColor(t.Text)
 
 		btnCheck := ui.ButtonBase(c).Padding(5, 14).Radius(6).Background(Pal(t).Hover).AlignItems(ui.Center)
@@ -310,7 +310,7 @@ func renderAboutTab(c *ui.Context, coord *app.Coordinator) {
 			ui.Text(c, "检查更新… (⌥⌘U)").FontSize(11).TextColor(t.Text)
 		})
 		if btnCheck.Clicked() {
-			coord.Toast("当前已是最新版本 (v1.0.0)")
+			coord.Toast("当前已是最新版本 (v1.1.0)")
 		}
 	})
 }

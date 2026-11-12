@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/bighaidao/clover-go/internal/app"
+	"github.com/bighaidao/clover-go/internal/config"
 	"github.com/bighaidao/clover-go/internal/domain"
 	"github.com/bighaidao/clover-go/internal/macos"
 	"github.com/egoist/mygo"
@@ -71,22 +72,7 @@ func renderBookmarksSection(c *ui.Context, coord *app.Coordinator, currentPath s
 	items := wsData.Bookmarks
 
 	secCol := ui.Column(c).Gap(2)
-	// Allow dropping folders directly into the bookmarks section to pin them
-	if payload, dropped := ui.Drop[app.FileDragPayload](secCol); dropped {
-		for _, p := range payload.Paths {
-			if fi, err := os.Stat(p); err == nil && fi.IsDir() {
-				_ = coord.AddBookmark(p, filepath.Base(p))
-				coord.Toast("已添加到收藏: " + filepath.Base(p))
-			}
-		}
-	} else if extFiles := secCol.DroppedFiles(); len(extFiles) > 0 {
-		for _, p := range extFiles {
-			if fi, err := os.Stat(p); err == nil && fi.IsDir() {
-				_ = coord.AddBookmark(p, filepath.Base(p))
-				coord.Toast("已添加到收藏: " + filepath.Base(p))
-			}
-		}
-	}
+	handleBookmarksDrop(secCol, coord)
 
 	folded := isSidebarFolded("收藏")
 	arrow := "▾"
@@ -95,7 +81,7 @@ func renderBookmarksSection(c *ui.Context, coord *app.Coordinator, currentPath s
 	}
 
 	secCol.Children(func() {
-		btnHeader := ui.ButtonBase(c).Padding(2, 6).Radius(4).AlignItems(ui.Center)
+		btnHeader := ui.ButtonBase(c).FillWidth().Justify(ui.Start).Padding(2, 6).Radius(4).AlignItems(ui.Center).Sticky().Top(0).Background(Pal(t).Sidebar).ZIndex(1)
 		btnHeader.Children(func() {
 			ui.Text(c, "收藏 "+arrow).FontSize(11).FontWeight(600).TextColor(t.TextMuted.Alpha(0.7))
 		})
@@ -113,55 +99,77 @@ func renderBookmarksSection(c *ui.Context, coord *app.Coordinator, currentPath s
 		}
 
 		for _, item := range items {
-			it := item
-			isSelected := domain.NormalizePath(currentPath) == domain.NormalizePath(it.Path)
-
-			btn := ui.ButtonBase(c).Padding(5, 8).Radius(6).Gap(8).AlignItems(ui.Center)
-			isOver := BindFileDropTarget(c, btn, it.Path, coord)
-
-			txtCol := t.Text
-			if isOver {
-				btn.Border(1.5, t.Accent).Background(Pal(t).Hover)
-				txtCol = t.Accent
-			} else if isSelected {
-				btn.Background(t.Selection)
-				txtCol = t.Accent
-			} else if btn.Hovered() {
-				btn.Background(Pal(t).Hover)
-			}
-
-			btn.Children(func() {
-				ui.Icon(c, IcFolder).Size(14, 14).TextColor(txtCol)
-				ui.Text(c, it.Name).FontSize(12).TextColor(txtCol).FontWeight(func() int {
-					if isSelected {
-						return 500
-					}
-					return 400
-				}()).SingleLine()
-			})
-
-			btn.ContextMenu(func(m *ui.Menu) {
-				if m.Item("在新标签页中打开").Chosen() {
-					coord.Tabs.NewTab(it.Path)
-					coord.LoadCurrentTab(nil)
-				}
-				if m.Item("在访达中显示").Chosen() {
-					mygo.Shell.ShowItemInFolder(it.Path)
-				}
-				if m.Item("复制路径").Chosen() {
-					_ = macos.CopyPath(it.Path, "posix")
-				}
-				m.Separator()
-				if m.Item("从收藏中移除").Chosen() {
-					_ = coord.RemoveBookmark(it.Path)
-				}
-			})
-
-			if btn.Clicked() && onNavigate != nil {
-				onNavigate(it.Path)
-			}
+			renderBookmarkItem(c, coord, item, currentPath, onNavigate)
 		}
 	})
+}
+
+func handleBookmarksDrop(secCol ui.Element, coord *app.Coordinator) {
+	if payload, dropped := ui.Drop[app.FileDragPayload](secCol); dropped {
+		for _, p := range payload.Paths {
+			if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+				_ = coord.AddBookmark(p, filepath.Base(p))
+				coord.Toast("已添加到收藏: " + filepath.Base(p))
+			}
+		}
+	} else if extFiles := secCol.DroppedFiles(); len(extFiles) > 0 {
+		for _, p := range extFiles {
+			if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+				_ = coord.AddBookmark(p, filepath.Base(p))
+				coord.Toast("已添加到收藏: " + filepath.Base(p))
+			}
+		}
+	}
+}
+
+func renderBookmarkItem(c *ui.Context, coord *app.Coordinator, it config.BookmarkItem, currentPath string, onNavigate func(string)) {
+	t := c.Theme()
+	isSelected := domain.NormalizePath(currentPath) == domain.NormalizePath(it.Path)
+
+	btn := ui.ButtonBase(c).FillWidth().Justify(ui.Start).Padding(5, 8).Radius(6).Gap(8).AlignItems(ui.Center).Tooltip(it.Name + "\n" + it.Path)
+	isOver := BindFileDropTarget(c, btn, it.Path, coord)
+
+	txtCol := t.Text
+	if isOver {
+		btn.Border(1.5, t.Accent).Background(Pal(t).Hover)
+		txtCol = t.Accent
+	} else if isSelected {
+		btn.Background(t.Selection)
+		txtCol = t.Accent
+	} else if btn.Hovered() {
+		btn.Background(Pal(t).Hover)
+	}
+
+	btn.Children(func() {
+		ui.Icon(c, IcFolder).Size(14, 14).TextColor(txtCol).Shrink(0)
+		ui.Text(c, it.Name).FontSize(12).TextColor(txtCol).FontWeight(func() int {
+			if isSelected {
+				return 500
+			}
+			return 400
+		}()).SingleLine().Grow(1).Shrink(1).MinWidth(0)
+	})
+
+	btn.ContextMenu(func(m *ui.Menu) {
+		if m.Item("在新标签页中打开").Chosen() {
+			coord.Tabs.NewTab(it.Path)
+			coord.LoadCurrentTab(nil)
+		}
+		if m.Item("在访达中显示").Chosen() {
+			mygo.Shell.ShowItemInFolder(it.Path)
+		}
+		if m.Item("复制路径").Chosen() {
+			_ = macos.CopyPath(it.Path, "posix")
+		}
+		m.Separator()
+		if m.Item("从收藏中移除").Chosen() {
+			_ = coord.RemoveBookmark(it.Path)
+		}
+	})
+
+	if btn.Clicked() && onNavigate != nil {
+		onNavigate(it.Path)
+	}
 }
 
 func renderSidebarSection(c *ui.Context, coord *app.Coordinator, header string, items []sidebarItem, currentPath string, onNavigate func(string)) {
@@ -173,7 +181,7 @@ func renderSidebarSection(c *ui.Context, coord *app.Coordinator, header string, 
 	}
 
 	ui.Column(c).Gap(2).Children(func() {
-		btnHeader := ui.ButtonBase(c).Padding(2, 6).Radius(4).AlignItems(ui.Center)
+		btnHeader := ui.ButtonBase(c).FillWidth().Justify(ui.Start).Padding(2, 6).Radius(4).AlignItems(ui.Center).Sticky().Top(0).Background(Pal(t).Sidebar).ZIndex(1)
 		btnHeader.Children(func() {
 			ui.Text(c, header+" "+arrow).FontSize(11).FontWeight(600).TextColor(t.TextMuted.Alpha(0.7))
 		})
@@ -186,47 +194,51 @@ func renderSidebarSection(c *ui.Context, coord *app.Coordinator, header string, 
 		}
 
 		for _, item := range items {
-			it := item
-			isSelected := domain.NormalizePath(currentPath) == domain.NormalizePath(it.Path)
-
-			btn := ui.ButtonBase(c).Padding(5, 8).Radius(6).Gap(8).AlignItems(ui.Center)
-			isOver := BindFileDropTarget(c, btn, it.Path, coord)
-
-			txtCol := t.Text
-			if isOver {
-				btn.Border(1.5, t.Accent).Background(Pal(t).Hover)
-				txtCol = t.Accent
-			} else if isSelected {
-				btn.Background(t.Selection)
-				txtCol = t.Accent
-			} else if btn.Hovered() {
-				btn.Background(Pal(t).Hover)
-			}
-
-			btn.Children(func() {
-				if it.Icon != nil {
-					ui.Icon(c, it.Icon).Size(14, 14).TextColor(txtCol)
-				}
-				ui.Text(c, it.Name).FontSize(12).TextColor(txtCol).FontWeight(func() int {
-					if isSelected {
-						return 500
-					}
-					return 400
-				}()).SingleLine()
-			})
-
-			btn.ContextMenu(func(m *ui.Menu) {
-				if m.Item("在新标签页中打开").Chosen() {
-					coord.Tabs.NewTab(it.Path)
-					coord.LoadCurrentTab(nil)
-				}
-			})
-
-			if btn.Clicked() && onNavigate != nil {
-				onNavigate(it.Path)
-			}
+			renderSidebarItem(c, coord, item, currentPath, onNavigate)
 		}
 	})
+}
+
+func renderSidebarItem(c *ui.Context, coord *app.Coordinator, it sidebarItem, currentPath string, onNavigate func(string)) {
+	t := c.Theme()
+	isSelected := domain.NormalizePath(currentPath) == domain.NormalizePath(it.Path)
+
+	btn := ui.ButtonBase(c).FillWidth().Justify(ui.Start).Padding(5, 8).Radius(6).Gap(8).AlignItems(ui.Center).Tooltip(it.Name + "\n" + it.Path)
+	isOver := BindFileDropTarget(c, btn, it.Path, coord)
+
+	txtCol := t.Text
+	if isOver {
+		btn.Border(1.5, t.Accent).Background(Pal(t).Hover)
+		txtCol = t.Accent
+	} else if isSelected {
+		btn.Background(t.Selection)
+		txtCol = t.Accent
+	} else if btn.Hovered() {
+		btn.Background(Pal(t).Hover)
+	}
+
+	btn.Children(func() {
+		if it.Icon != nil {
+			ui.Icon(c, it.Icon).Size(14, 14).TextColor(txtCol).Shrink(0)
+		}
+		ui.Text(c, it.Name).FontSize(12).TextColor(txtCol).FontWeight(func() int {
+			if isSelected {
+				return 500
+			}
+			return 400
+		}()).SingleLine().Grow(1).Shrink(1).MinWidth(0)
+	})
+
+	btn.ContextMenu(func(m *ui.Menu) {
+		if m.Item("在新标签页中打开").Chosen() {
+			coord.Tabs.NewTab(it.Path)
+			coord.LoadCurrentTab(nil)
+		}
+	})
+
+	if btn.Clicked() && onNavigate != nil {
+		onNavigate(it.Path)
+	}
 }
 
 func renderWorkspacesSection(c *ui.Context, coord *app.Coordinator) {
@@ -237,17 +249,17 @@ func renderWorkspacesSection(c *ui.Context, coord *app.Coordinator) {
 	}
 
 	ui.Column(c).Gap(2).Children(func() {
-		ui.Text(c, "常用工作区").FontSize(11).FontWeight(600).TextColor(t.TextMuted.Alpha(0.7)).Padding(2, 6)
+		ui.Text(c, "常用工作区").FontSize(11).FontWeight(600).TextColor(t.TextMuted.Alpha(0.7)).Padding(2, 6).Sticky().Top(0).Background(Pal(t).Sidebar).ZIndex(1)
 
 		for _, w := range wsData.Workspaces {
 			ws := w
-			btn := ui.ButtonBase(c).Padding(5, 8).Radius(6).Gap(8).AlignItems(ui.Center)
+			btn := ui.ButtonBase(c).FillWidth().Justify(ui.Start).Padding(5, 8).Radius(6).Gap(8).AlignItems(ui.Center).Tooltip(ws.Name)
 			if btn.Hovered() {
 				btn.Background(Pal(t).Hover)
 			}
 			btn.Children(func() {
-				ui.Icon(c, IcFolder).Size(14, 14).TextColor(t.TextMuted)
-				ui.Text(c, ws.Name).FontSize(12).TextColor(t.Text).SingleLine()
+				ui.Icon(c, IcFolder).Size(14, 14).TextColor(t.TextMuted).Shrink(0)
+				ui.Text(c, ws.Name).FontSize(12).TextColor(t.Text).SingleLine().Grow(1).Shrink(1).MinWidth(0)
 			})
 			if btn.Clicked() {
 				coord.RestoreWorkspace(ws)
@@ -273,12 +285,12 @@ func renderColorTagsSection(c *ui.Context, coord *app.Coordinator) {
 	}
 
 	ui.Column(c).Gap(2).Children(func() {
-		ui.Text(c, "标签筛选").FontSize(11).FontWeight(600).TextColor(t.TextMuted.Alpha(0.7)).Padding(2, 6)
+		ui.Text(c, "标签筛选").FontSize(11).FontWeight(600).TextColor(t.TextMuted.Alpha(0.7)).Padding(2, 6).Sticky().Top(0).Background(Pal(t).Sidebar).ZIndex(1)
 
 		for _, tg := range tags {
 			tagCopy := tg
 			isSelected := coord.FilterTag == tagCopy.Idx
-			btn := ui.ButtonBase(c).Padding(4, 8).Radius(6).Gap(8).AlignItems(ui.Center)
+			btn := ui.ButtonBase(c).FillWidth().Justify(ui.Start).Padding(4, 8).Radius(6).Gap(8).AlignItems(ui.Center).Tooltip(tagCopy.Name)
 			if isSelected {
 				btn.Background(t.Selection)
 			} else if btn.Hovered() {
@@ -290,7 +302,7 @@ func renderColorTagsSection(c *ui.Context, coord *app.Coordinator) {
 				if isSelected {
 					txtCol = t.Accent
 				}
-				ui.Text(c, tagCopy.Name).FontSize(12).TextColor(txtCol).SingleLine()
+				ui.Text(c, tagCopy.Name).FontSize(12).TextColor(txtCol).SingleLine().Grow(1).Shrink(1).MinWidth(0)
 			})
 			if btn.Clicked() {
 				if coord.FilterTag == tagCopy.Idx {

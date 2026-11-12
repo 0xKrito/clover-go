@@ -140,9 +140,13 @@ func renderPDFMergeBody(c *ui.Context, coord *app.Coordinator) {
 	t := c.Theme()
 	ui.Text(c, "即将按以下顺序合并为一个 PDF 文件:").FontSize(11).TextColor(t.TextMuted)
 
-	ui.Column(c).MaxHeight(100).Radius(4).Border(1, Pal(t).Line).Padding(6).Gap(4).Children(func() {
+	ui.Scroll(c).MaxHeight(120).Radius(4).Border(1, Pal(t).Line).Padding(6).Gap(4).Children(func() {
 		for i, p := range coord.PDFOptions.SourceFiles {
-			ui.Text(c, fmt.Sprintf("%d. %s", i+1, filepath.Base(p))).FontSize(11).TextColor(t.Text).SingleLine()
+			f := filepath.Base(p)
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, fmt.Sprintf("%d.", i+1)).FontSize(11).TextColor(t.TextMuted).Shrink(0)
+				ui.Text(c, f).FontSize(11).TextColor(t.Text).Grow(1).Shrink(1).MinWidth(0).SingleLine().Tooltip(f)
+			})
 		}
 	})
 

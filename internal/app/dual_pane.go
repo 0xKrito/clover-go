@@ -88,6 +88,7 @@ func (c *Coordinator) LoadPane(pane *PaneState, onDone func()) {
 
 			domain.SortFiles(entries, pane.Sort)
 			pane.Entries = entries
+			pane.TableState.HoldPlace()
 			c.ApplyPaneFilter(pane)
 
 			if onDone != nil {
@@ -103,6 +104,7 @@ func (c *Coordinator) ApplyPaneFilter(pane *PaneState) {
 	if pane == nil {
 		return
 	}
+	pane.TableState.HoldPlace()
 	query := strings.TrimSpace(pane.FilterQuery)
 	filtered := pane.Entries
 
