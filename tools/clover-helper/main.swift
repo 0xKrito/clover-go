@@ -379,7 +379,7 @@ case "finder-reveal":
     DistributedNotificationCenter.default().postNotificationName(
         Notification.Name("com.clover.app.finderPassThrough"),
         object: nil,
-        userInfo: ["seconds": 8.0],
+        userInfo: nil,
         deliverImmediately: true
     )
 
@@ -504,10 +504,21 @@ final class FinderRedirectDaemon: NSObject, NSApplicationDelegate {
     private var pollTimer: Timer?
     private var pendingWorkItem: DispatchWorkItem?
     private var didWarnAutomation = false
-    /// Set when CloverGo itself asked for the real Finder (the "在访达中显示"
-    /// menu entry). Finder is meant to stay open for that window, so the
-    /// redirect is suspended until the user leaves Finder.
-    private var finderPassThroughUntil: Date?
+    /// True while CloverGo itself asked for the real Finder (the "在访达中显示"
+    /// menu entry). The redirect stays suspended for the whole Finder session
+    /// it opens, not for a fixed number of seconds: a timer would close the
+    /// window out from under a user who is still browsing it.
+    private var finderPassThroughActive = false
+    /// When the pass-through started, so a session that never ends can still
+    /// be recovered from if the user leaves Finder open forever.
+    private var finderPassThroughStartedAt: Date?
+    /// Finder's window count when the pass-through began. The session ends
+    /// once the user has closed those windows again.
+    private var finderWindowBaseline = 0
+    /// True until Finder has actually drawn the window the reveal asked for.
+    /// The baseline cannot be taken before that: at reveal time Finder may
+    /// still have no windows, and an empty count would end the session at once.
+    private var finderPassThroughAwaitingWindow = false
 
     init(parentPID: pid_t) {
         self.parentPID = parentPID
@@ -555,10 +566,13 @@ final class FinderRedirectDaemon: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleFinderPassThrough(_ note: Notification) {
-        // Long enough to cover Finder launching and drawing its window, short
-        // enough that a later Dock click is intercepted again.
-        let seconds = (note.userInfo?["seconds"] as? Double) ?? 8
-        finderPassThroughUntil = Date().addingTimeInterval(seconds)
+        finderPassThroughActive = true
+        finderPassThroughStartedAt = Date()
+        // The baseline cannot be taken here: Finder usually has no window yet
+        // at the moment the reveal is requested, and a zero baseline would end
+        // the session on the very next tick, before the window is on screen.
+        finderPassThroughAwaitingWindow = true
+        finderWindowBaseline = 0
         // Drop anything already queued, so a redirect scheduled a moment ago
         // does not close the window CloverGo just asked for.
         pendingWorkItem?.cancel()
@@ -566,13 +580,81 @@ final class FinderRedirectDaemon: NSObject, NSApplicationDelegate {
     }
 
     /// True while CloverGo's own reveal is meant to stay visible in Finder.
+    ///
+    /// The session ends when the user closes the Finder windows the reveal
+    /// opened, or after a generous safety timeout in case they leave Finder
+    /// open for good. Until then, Dock clicks on Finder are left alone: the
+    /// user is deliberately using Finder.
     private func isPassThroughActive() -> Bool {
-        guard let until = finderPassThroughUntil else { return false }
-        if Date() < until {
+        guard finderPassThroughActive else { return false }
+
+        let openWindows = finderBrowserWindowCount()
+
+        if finderPassThroughAwaitingWindow {
+            // Wait for Finder to draw the window the reveal asked for. Until
+            // it does, stay suspended rather than redirecting an empty Finder.
+            if openWindows > 0 {
+                finderPassThroughAwaitingWindow = false
+                finderWindowBaseline = 0
+                finderPassThroughStartedAt = Date()
+            } else if let started = finderPassThroughStartedAt,
+                      Date().timeIntervalSince(started) > 30 {
+                // Finder never opened a window (the reveal failed, or the user
+                // cancelled). Give up so Dock clicks are intercepted again.
+                endPassThrough()
+                return false
+            }
             return true
         }
-        finderPassThroughUntil = nil
-        return false
+
+        if openWindows <= finderWindowBaseline {
+            // The user closed the windows the reveal opened.
+            endPassThrough()
+            return false
+        }
+        if let started = finderPassThroughStartedAt,
+           Date().timeIntervalSince(started) > 600 {
+            // Ten minutes without closing them: assume the session is over.
+            endPassThrough()
+            return false
+        }
+        return true
+    }
+
+    private func endPassThrough() {
+        finderPassThroughActive = false
+        finderPassThroughAwaitingWindow = false
+        finderPassThroughStartedAt = nil
+        finderWindowBaseline = 0
+    }
+
+    /// Number of Finder browser windows currently on screen, using the same
+    /// filter as the redirect check.
+    private func finderBrowserWindowCount() -> Int {
+        guard let finderPID = NSRunningApplication
+            .runningApplications(withBundleIdentifier: finderBundleID)
+            .first?
+            .processIdentifier else { return 0 }
+
+        guard let info = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else { return 0 }
+
+        let screenH = NSScreen.main?.frame.height ?? 900
+        let screenW = NSScreen.main?.frame.width ?? 1400
+        var count = 0
+        for win in info {
+            guard let pid = win[kCGWindowOwnerPID as String] as? pid_t, pid == finderPID else { continue }
+            guard (win[kCGWindowLayer as String] as? Int ?? 0) == 0 else { continue }
+            guard let bounds = win[kCGWindowBounds as String] as? [String: Any] else { continue }
+            let height = (bounds["Height"] as? NSNumber)?.doubleValue ?? 0
+            let width = (bounds["Width"] as? NSNumber)?.doubleValue ?? 0
+            if height < 120 || width < 160 { continue }
+            if height >= screenH - 40 && width >= screenW - 40 { continue }
+            count += 1
+        }
+        return count
     }
 
     private func tick() {
