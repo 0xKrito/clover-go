@@ -2,45 +2,45 @@ package ui
 
 import (
 	"github.com/bighaidao/clover-go/internal/app"
+	"github.com/bighaidao/clover-go/internal/macos"
 	"github.com/egoist/mygo"
 )
 
 // revealInFinderOrSelf implements the "在访达中显示" menu entry.
 //
-// Once CloverGo has taken over Finder (NSFileViewer and public.folder point at
-// com.clover.app), calling mygo.Shell.ShowItemInFolder from inside CloverGo is
-// a round trip through the system that lands right back here: LaunchServices
-// resolves the request to this very app, the reveal arrives as an
-// application:openFiles: event, and RevealPath opens the parent directory —
-// which the user already had open. The menu entry then looks like it does
-// nothing at all.
+// The entry always means the real Finder: the user picked it precisely because
+// they want to leave CloverGo. That is why it does not go through
+// NSWorkspace.activateFileViewerSelectingURLs: (what mygo.Shell.ShowItemInFolder
+// calls) — once CloverGo has taken over, NSFileViewer resolves that request
+// back to CloverGo itself, and the menu appears to do nothing.
 //
-// So the behaviour depends on who is currently the system's file viewer:
-//
-//   - CloverGo is the viewer: reveal in place, through the same RevealPath the
-//     incoming system requests use.
-//   - Finder is the viewer: hand the path to the system as before, so the
-//     entry keeps opening the real Finder.
+// Instead the path is handed to Finder.app directly, which bypasses the
+// NSFileViewer lookup. When CloverGo has not taken over, the plain system call
+// already opens Finder and is kept as-is.
 func revealInFinderOrSelf(coord *app.Coordinator, path string) {
 	if path == "" {
 		return
 	}
 	if coord != nil && coord.Prefs != nil && coord.Prefs.Get().TakeoverFinder {
-		coord.RevealPath(path, true)
+		if err := macos.RevealInRealFinder(path); err != nil {
+			coord.Toast("无法在访达中显示: " + err.Error())
+		}
 		return
 	}
 	mygo.Shell.ShowItemInFolder(path)
 }
 
-// revealDirectoryOrSelf opens a directory in CloverGo when it is the viewer,
-// otherwise hands it to the system. Used by the "在访达中打开" button on a
-// failed directory load, where the target is a folder rather than an item.
+// revealDirectoryOrSelf opens a directory in the real Finder, or in CloverGo
+// when Finder is not the viewer. Used by the "在访达中打开" button on a failed
+// directory load, where the target is a folder rather than an item.
 func revealDirectoryOrSelf(coord *app.Coordinator, dir string) {
 	if dir == "" {
 		return
 	}
 	if coord != nil && coord.Prefs != nil && coord.Prefs.Get().TakeoverFinder {
-		coord.RevealPath(dir, false)
+		if err := macos.RevealInRealFinder(dir); err != nil {
+			coord.Toast("无法在访达中打开: " + err.Error())
+		}
 		return
 	}
 	mygo.Shell.ShowItemInFolder(dir)

@@ -358,6 +358,48 @@ case "finder-watch":
     app.delegate = watcher
     app.run()
 
+case "finder-reveal":
+    // Select a path in the real Finder, bypassing NSFileViewer.
+    //
+    // NSWorkspace.activateFileViewerSelectingURLs: resolves the file viewer
+    // through NSFileViewer, so once CloverGo has taken over it comes straight
+    // back to CloverGo. Talking to Finder.app directly with an Apple Event
+    // skips that lookup entirely.
+    //
+    // CloverGoWatch would otherwise treat this Finder window as a Dock click
+    // and close it, so it is told to stand aside first.
+    guard rest.count >= 1, !rest[0].isEmpty else {
+        fail("finder-reveal: missing path")
+    }
+    let target = URL(fileURLWithPath: rest[0]).standardizedFileURL
+    guard FileManager.default.fileExists(atPath: target.path) else {
+        fail("finder-reveal: no such path \(target.path)")
+    }
+
+    DistributedNotificationCenter.default().postNotificationName(
+        Notification.Name("com.clover.app.finderPassThrough"),
+        object: nil,
+        userInfo: ["seconds": 8.0],
+        deliverImmediately: true
+    )
+
+    let source = """
+    tell application "Finder"
+      activate
+      reveal (POSIX file "\(target.path)" as alias)
+    end tell
+    """
+    var error: NSDictionary?
+    guard let script = NSAppleScript(source: source) else {
+        fail("finder-reveal: cannot compile script")
+    }
+    _ = script.executeAndReturnError(&error)
+    if let error {
+        let message = (error[NSAppleScript.errorMessage] as? String) ?? "\(error)"
+        fail("finder-reveal: \(message)")
+    }
+    print("OK")
+
 case "launch-at-login":
     let mode = rest.first ?? "status"
     let appPath = rest.count >= 2 ? rest[1] : "/Applications/CloverGo.app"
@@ -462,6 +504,10 @@ final class FinderRedirectDaemon: NSObject, NSApplicationDelegate {
     private var pollTimer: Timer?
     private var pendingWorkItem: DispatchWorkItem?
     private var didWarnAutomation = false
+    /// Set when CloverGo itself asked for the real Finder (the "在访达中显示"
+    /// menu entry). Finder is meant to stay open for that window, so the
+    /// redirect is suspended until the user leaves Finder.
+    private var finderPassThroughUntil: Date?
 
     init(parentPID: pid_t) {
         self.parentPID = parentPID
@@ -491,6 +537,15 @@ final class FinderRedirectDaemon: NSObject, NSApplicationDelegate {
         ) { [weak self] note in
             self?.handleWorkspaceAppNote(note)
         }
+        // CloverGo's own "在访达中显示" entry asks for the real Finder. The
+        // distributed notification tells this daemon to stand aside so the
+        // window it opens is not closed again a frame later.
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(handleFinderPassThrough(_:)),
+            name: Notification.Name("com.clover.app.finderPassThrough"),
+            object: nil
+        )
 
         let timer = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in
             self?.tick()
@@ -499,12 +554,34 @@ final class FinderRedirectDaemon: NSObject, NSApplicationDelegate {
         self.pollTimer = timer
     }
 
+    @objc private func handleFinderPassThrough(_ note: Notification) {
+        // Long enough to cover Finder launching and drawing its window, short
+        // enough that a later Dock click is intercepted again.
+        let seconds = (note.userInfo?["seconds"] as? Double) ?? 8
+        finderPassThroughUntil = Date().addingTimeInterval(seconds)
+        // Drop anything already queued, so a redirect scheduled a moment ago
+        // does not close the window CloverGo just asked for.
+        pendingWorkItem?.cancel()
+        pendingWorkItem = nil
+    }
+
+    /// True while CloverGo's own reveal is meant to stay visible in Finder.
+    private func isPassThroughActive() -> Bool {
+        guard let until = finderPassThroughUntil else { return false }
+        if Date() < until {
+            return true
+        }
+        finderPassThroughUntil = nil
+        return false
+    }
+
     private func tick() {
         // Exit immediately if parent CloverGo process has exited
         if parentPID > 0 && kill(parentPID, 0) != 0 {
             exit(0)
         }
         guard !isRedirectingFinder else { return }
+        guard !isPassThroughActive() else { return }
         guard finderLooksLikeItHasBrowserWindows() else { return }
         scheduleFinderRedirect(settle: 0)
     }
@@ -512,6 +589,7 @@ final class FinderRedirectDaemon: NSObject, NSApplicationDelegate {
     private func handleWorkspaceAppNote(_ note: Notification) {
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
               app.bundleIdentifier == finderBundleID else { return }
+        guard !isPassThroughActive() else { return }
         scheduleFinderRedirect(settle: 0.04)
     }
 

@@ -329,3 +329,53 @@ func UninstallWatchLaunchAgent() {
 	_ = exec.Command("/bin/launchctl", "unload", plistPath).Run()
 	_ = os.Remove(plistPath)
 }
+
+// RevealInRealFinder opens the system Finder and selects path in it, even when
+// CloverGo currently owns the file viewer role.
+//
+// NSWorkspace.activateFileViewerSelectingURLs: and mygo.Shell.ShowItemInFolder
+// both resolve through NSFileViewer, so once CloverGo has taken over they come
+// straight back to CloverGo. Launching Finder.app explicitly with an Apple
+// Event bypasses that lookup: Finder is told to reveal the path itself.
+//
+// The path may be a file, a folder, or a .app bundle; Finder selects whatever
+// it is given inside its parent folder, which is what "Show in Finder" means.
+func RevealInRealFinder(path string) error {
+	if path == "" {
+		return fmt.Errorf("reveal: empty path")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
+	if _, statErr := os.Stat(abs); statErr != nil {
+		return fmt.Errorf("reveal: %w", statErr)
+	}
+
+	// Prefer the helper, which talks to Finder through NSWorkspace's own
+	// reveal API while explicitly targeting Finder.app, so the request cannot
+	// be routed back to CloverGo.
+	if _, err := runHelper("finder-reveal", abs); err == nil {
+		return nil
+	}
+
+	// Fallback: drive Finder with AppleScript. Works without the helper, and
+	// still bypasses NSFileViewer because the target app is named explicitly.
+	script := fmt.Sprintf(
+		`tell application "Finder" to reveal (POSIX file %q as alias)`,
+		abs,
+	)
+	cmd := exec.Command("/usr/bin/osascript", "-e", script)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("reveal in Finder: %v: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+// ActivateFinder brings the real Finder to the front, used after revealing so
+// the selected item is visible rather than hidden behind CloverGo.
+func ActivateFinder() {
+	_ = exec.Command("/usr/bin/open", "-a", "Finder").Run()
+}
